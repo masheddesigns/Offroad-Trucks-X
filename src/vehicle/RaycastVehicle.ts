@@ -62,6 +62,7 @@ export class RaycastVehicle {
     // 1. Heavy Truck Chassis Rigid Body (7,500 kg Dakar Ladder Frame)
     const bodyDesc = rapier.RigidBodyDesc.dynamic()
       .setTranslation(initialPos.x, initialPos.y, initialPos.z)
+      .setRotation({ x: 0, y: 1, z: 0, w: 0 }) // Face North toward WP1 down the pine tree corridor
       .setLinearDamping(0.14)
       .setAngularDamping(1.5)
       .setCanSleep(false);
@@ -471,9 +472,9 @@ export class RaycastVehicle {
     }
   }
 
-  public resetToSafePosition(targetPos = new THREE.Vector3(0, 1.35, 0)) {
+  public resetToSafePosition(targetPos = new THREE.Vector3(0, 1.35, 12)) {
     this.chassisBody.setTranslation({ x: targetPos.x, y: targetPos.y, z: targetPos.z }, true);
-    this.chassisBody.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
+    this.chassisBody.setRotation({ x: 0, y: 1, z: 0, w: 0 }, true); // Face forward North (-Z)
     this.chassisBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.chassisBody.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.currentSteer = 0;

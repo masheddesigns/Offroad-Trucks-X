@@ -90,8 +90,9 @@ class Game {
     this.forestMap = new ForestStageMap(this.physics.rapier, this.physics.world);
     this.scene.add(this.forestMap.mesh);
 
-    // Staging position at the forest trailhead (Gentle ground level spawn)
-    const spawnPos = new THREE.Vector3(0, 1.4, 0);
+    // Staging position at the rally start line facing north into the pine forest tunnel
+    const startY = this.forestMap.getTerrainHeight(0, 12) + 1.35;
+    const spawnPos = new THREE.Vector3(0, startY, 12);
     this.vehicle = new RaycastVehicle(this.physics.rapier, this.physics.world, spawnPos);
 
     // Hero 6x6 Off-Road Visual Rig
