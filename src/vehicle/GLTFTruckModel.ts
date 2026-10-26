@@ -96,12 +96,12 @@ export class GLTFTruckModel {
       const spinQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), spinAngle);
 
       if (axle.isFront) {
-        // Front Axle Steers
+        // Front Axle Steers and Spins (Level with ground)
         const steerQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), vehicle.currentSteer);
-        axle.node.quaternion.copy(axle.initialQuat).multiply(steerQuat).multiply(spinQuat);
+        axle.node.quaternion.copy(steerQuat).multiply(spinQuat);
       } else {
         // Rear Tandem Axles Spin
-        axle.node.quaternion.copy(axle.initialQuat).multiply(spinQuat);
+        axle.node.quaternion.copy(spinQuat);
       }
     }
   }

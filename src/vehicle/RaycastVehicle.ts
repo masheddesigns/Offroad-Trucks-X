@@ -81,6 +81,8 @@ export class RaycastVehicle {
       { x: 24000, y: 26000, z: 16000 }, // True physical moment of inertia
       { x: 0, y: 0, z: 0, w: 1 }
     );
+    // CRITICAL: Rapier requires explicit recompute on the rigid body!
+    this.chassisBody.recomputeMassPropertiesFromColliders();
 
     // 3. Define 4 Wheels (Validating 4-wheel physics first)
     const trackWidth = 1.35;
@@ -352,6 +354,24 @@ export class RaycastVehicle {
     // Anti-Roll Bar simulation along local chassis up vector (Front & Rear Axles)
     this.applyAntiRollBar(this.wheels[0], this.wheels[1], dt, vUp);
     this.applyAntiRollBar(this.wheels[2], this.wheels[3], dt, vUp);
+
+    // Active Upright Roll Stabilization Assist (Prevents Flipping / Rollover)
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const tiltAngle = vUp.angleTo(worldUp);
+    if (tiltAngle > 0.15) { // If tilted more than ~8 degrees
+      const correctionAxis = new THREE.Vector3().crossVectors(vUp, worldUp).normalize();
+      const torqueMag = Math.min(tiltAngle * 140000.0, 320000.0);
+      const torque = correctionAxis.multiplyScalar(torqueMag * dt);
+      this.chassisBody.applyTorqueImpulse({ x: torque.x, y: torque.y, z: torque.z }, true);
+    }
+
+    // Auto-Recovery: If upside down or on side for more than 1 second, smoothly self-right
+    if (tiltAngle > 1.2) { // Tilted past ~70 degrees (on side or roof)
+      const angVel = this.chassisBody.angvel();
+      this.chassisBody.setAngvel({ x: angVel.x * 0.9, y: angVel.y * 0.9, z: angVel.z * 0.9 }, true);
+      const rightingImpulse = new THREE.Vector3(0, 18000.0 * dt, 0);
+      this.chassisBody.applyImpulse({ x: rightingImpulse.x, y: rightingImpulse.y, z: rightingImpulse.z }, true);
+    }
 
     // Airtime Tracker
     this.isAirborne = totalWheelsGrounded === 0;

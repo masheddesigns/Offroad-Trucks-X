@@ -487,19 +487,13 @@ export class ForestStageMap {
       emissiveIntensity: 1.8
     });
 
-    // 1. Concrete Island with Yellow Curb
-    const islandGeo = new THREE.BoxGeometry(3.6, 0.4, 12.0);
-    const islandMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.8 });
+    // 1. Concrete Service Apron (Flush ground pad, no tripping curb!)
+    const islandGeo = new THREE.BoxGeometry(4.0, 0.05, 12.0);
+    const islandMat = new THREE.MeshStandardMaterial({ color: 0x3b4252, roughness: 0.85 });
     const island = new THREE.Mesh(islandGeo, islandMat);
-    island.position.y = 0.2;
+    island.position.y = 0.025;
     island.receiveShadow = true;
-
-    // Yellow Hazard Edge Curb Lines
-    const curbGeo = new THREE.BoxGeometry(3.8, 0.15, 12.2);
-    const curbMat = new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.6 });
-    const curb = new THREE.Mesh(curbGeo, curbMat);
-    curb.position.y = 0.08;
-    station.add(curb, island);
+    station.add(island);
 
     // 2. Realistic Dual Fuel Dispensers
     for (const pz of [-3.2, 3.2]) {

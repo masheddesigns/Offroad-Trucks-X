@@ -45,8 +45,6 @@ class Game {
   private hbBadgeEl = document.getElementById('hb-badge');
   private btnSound = document.getElementById('btn-sound');
   private soundLabelEl = document.getElementById('sound-label');
-  private btnVehicle = document.getElementById('btn-vehicle');
-  private vehicleLabelEl = document.getElementById('vehicle-label');
 
   public async init() {
     const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
@@ -92,52 +90,25 @@ class Game {
     this.forestMap = new ForestStageMap(this.physics.rapier, this.physics.world);
     this.scene.add(this.forestMap.mesh);
 
-    // Staging position at the forest trailhead
-    const spawnPos = new THREE.Vector3(0, 3.5, 0);
+    // Staging position at the forest trailhead (Gentle ground level spawn)
+    const spawnPos = new THREE.Vector3(0, 1.4, 0);
     this.vehicle = new RaycastVehicle(this.physics.rapier, this.physics.world, spawnPos);
 
-    // Hero 6x6 Off-Road Models
+    // Hero 6x6 Off-Road Visual Rig
     this.truckModel = new TruckModel();
+    this.truckModel.group.visible = false; // Hide primitive box truck
     this.gltfTruckModel = new GLTFTruckModel();
     this.scene.add(this.truckModel.group);
     this.scene.add(this.gltfTruckModel.group);
 
-    const updateVehicleLabel = () => {
-      if (this.vehicleLabelEl) {
-        this.vehicleLabelEl.textContent = this.useGLTF ? 'Cougar 6x6' : 'Dakar Tsar';
-      }
-    };
-
-    // Load authentic 3D Truck Model (Cougar 6x6 with 4K PBR textures)
-    this.gltfTruckModel.loadModel('/assets/models/dakar_truck.glb').then((loaded) => {
-      if (loaded) {
-        this.useGLTF = true;
-        this.truckModel.group.visible = false;
-        this.gltfTruckModel.group.visible = true;
-        updateVehicleLabel();
-      }
-    });
-
-    const toggleVehicle = () => {
-      if (this.gltfTruckModel.isLoaded) {
-        this.useGLTF = !this.useGLTF;
-        this.gltfTruckModel.group.visible = this.useGLTF;
-        this.truckModel.group.visible = !this.useGLTF;
-        updateVehicleLabel();
-      }
-    };
-
-    this.btnVehicle?.addEventListener('click', (e) => {
-      e.preventDefault();
-      toggleVehicle();
-    });
-
-    // Press 'V' to toggle between 3D GLTF Truck and Dakar Tsar
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'v' || e.key === 'V') {
-        toggleVehicle();
-      }
-    });
+    // Await authentic 3D Truck Model before starting so it renders on frame 1
+    const loaded = await this.gltfTruckModel.loadModel('/assets/models/dakar_truck.glb');
+    if (loaded) {
+      this.useGLTF = true;
+      this.gltfTruckModel.group.visible = true;
+    } else {
+      this.truckModel.group.visible = true;
+    }
 
     // Setup Sound Toggle UI
     this.setupAudioUI();
