@@ -89,28 +89,37 @@ export class DustParticleSystem {
   }
 
   /**
-   * Spawn wheel dust / mud spray
+   * Spawn wheel dust / mud spray / water splashes
    */
-  public emitWheelDust(pos: THREE.Vector3, truckVelocity: THREE.Vector3, intensity: number = 1.0) {
-    if (intensity < 0.1) return;
+  public emitWheelDust(pos: THREE.Vector3, truckVelocity: THREE.Vector3, intensity: number = 1.0, surfaceType: string = 'trail') {
+    if (intensity < 0.08) return;
 
     const p = this.particles.find(part => part.life <= 0);
     if (!p) return;
 
-    p.life = 0.6 + Math.random() * 0.45;
-    p.maxLife = p.life;
-    p.pos.copy(pos).add(new THREE.Vector3((Math.random() - 0.5) * 0.35, 0.12, (Math.random() - 0.5) * 0.35));
+    const isWater = surfaceType === 'water';
+    const isMud = surfaceType === 'mud';
 
-    // Blow mud/dust backwards and outwards from tire
+    p.life = isWater ? 0.45 + Math.random() * 0.35 : 0.6 + Math.random() * 0.45;
+    p.maxLife = p.life;
+    p.pos.copy(pos).add(new THREE.Vector3((Math.random() - 0.5) * 0.4, 0.15, (Math.random() - 0.5) * 0.4));
+
+    // Water rooster tails shoot higher and wider
+    const upVel = isWater
+      ? Math.random() * 3.8 + 2.2
+      : isMud
+      ? Math.random() * 2.8 + 1.2
+      : Math.random() * 1.8 + 0.6;
+
     p.vel.set(
-      -truckVelocity.x * 0.28 + (Math.random() - 0.5) * 1.8,
-      Math.random() * 1.8 + 0.6,
-      -truckVelocity.z * 0.28 + (Math.random() - 0.5) * 1.8
+      -truckVelocity.x * 0.32 + (Math.random() - 0.5) * (isWater ? 3.2 : 1.8),
+      upVel,
+      -truckVelocity.z * 0.32 + (Math.random() - 0.5) * (isWater ? 3.2 : 1.8)
     );
 
-    p.scale = 0.25;
-    p.maxScale = (0.9 + Math.random() * 1.2) * Math.min(2.0, intensity);
-    p.alpha = 0.45;
+    p.scale = isMud ? 0.35 : 0.25;
+    p.maxScale = (isWater ? 1.4 : isMud ? 1.6 : 1.0) * Math.min(2.2, intensity);
+    p.alpha = isWater ? 0.65 : 0.45;
   }
 
   /**

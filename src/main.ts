@@ -176,11 +176,11 @@ class Game {
       if (this.camLabelEl) this.camLabelEl.textContent = modeName;
     }
 
-    // Step Physics Simulation (Substeps for high stability)
+    // Step Physics Simulation (Substeps for high stability with surface physics)
     const substeps = 2;
     const subDt = dt / substeps;
     for (let s = 0; s < substeps; s++) {
-      this.vehicle.update(subDt, inputState);
+      this.vehicle.update(subDt, inputState, (x, z) => this.forestMap.getSurfaceAt(x, z));
       this.physics.step();
     }
 
@@ -235,8 +235,8 @@ class Game {
       this.fuelSystem.refuelFull();
     }
 
-    // Dynamic Sunlight Follows Vehicle
-    this.atmosphere.updateLightTarget(truckPos);
+    // Dynamic Sunlight & Ghibli Sky & Cloud Animation
+    this.atmosphere.update(dt, truckPos);
 
     // Stage Timing System
     if (this.vehicle.speedKmh > 3.0 && !this.stageTimer.isRunning && !this.stageTimer.stageCompleted) {
@@ -261,7 +261,7 @@ class Game {
           const w = this.vehicle.wheels[i];
           if (w.inContact) {
             const intensity = (this.vehicle.speedKmh / 80.0) + (this.vehicle.isHandbraking ? 1.0 : 0.0);
-            this.dust.emitWheelDust(w.worldPosition, truckVel, intensity);
+            this.dust.emitWheelDust(w.worldPosition, truckVel, intensity, w.surfaceType);
           }
         }
       }

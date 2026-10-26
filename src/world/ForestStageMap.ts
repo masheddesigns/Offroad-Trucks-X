@@ -7,10 +7,19 @@ export interface GasStationLocation {
   radius: number;
 }
 
+export interface SurfaceInfo {
+  type: 'trail' | 'mud' | 'water' | 'grass' | 'rock';
+  friction: number;
+  rollingResistance: number;
+  depth: number;
+  bumpiness: number;
+}
+
 export class ForestStageMap {
   public mesh: THREE.Group;
   public gasStations: GasStationLocation[] = [];
   public waterMesh?: THREE.Mesh;
+  public grassMesh?: THREE.InstancedMesh;
   private rapier: typeof RAPIER;
   private world: RAPIER.World;
 
@@ -20,11 +29,114 @@ export class ForestStageMap {
     this.mesh = new THREE.Group();
 
     this.buildTerrain();
-    this.buildMountainCreek();
+    this.buildGhibliMountainCreek();
     this.buildLushPineForest();
+    this.buildGhibliPainterlyGrass();
     this.buildGraniteBoulders();
     this.buildGasStations();
-    this.buildForestObstacles();
+    this.buildRallyObstaclesAndBridges();
+  }
+
+  /**
+   * Distance to off-road rally circuit trail center
+   */
+  public getTrailDistance(x: number, z: number): number {
+    // 1. Trailhead start straight and North Valley trail (z: 30 to -85, x near 0)
+    let minD = 999.0;
+    if (z > -85 && z < 45) {
+      const trailX = Math.sin(z * 0.045) * 8.5;
+      minD = Math.min(minD, Math.hypot(x - trailX, 0));
+    }
+
+    // 2. High Logging Pass (curves West from (8, -85) to (-85, -60))
+    if (z < -45 && x < 25 && x > -95) {
+      const t = (x - (-85)) / 110.0;
+      const passZ = -60 - Math.sin(t * Math.PI) * 28.0;
+      minD = Math.min(minD, Math.hypot(z - passZ, 0));
+    }
+
+    // 3. Ravine descent & Mud crossing into River (from (-85, -55) to (-52, 10))
+    if (x < -35 && x > -95 && z > -60 && z < 25) {
+      const t = (z - (-60)) / 85.0;
+      const descentX = -85 + t * 33.0;
+      minD = Math.min(minD, Math.hypot(x - descentX, 0));
+    }
+
+    // 4. South Meadow return loop (from (-52, 10) through (-20, 45) to (0, 15))
+    if (z > 5 && z < 65) {
+      const loopZ = 42 + Math.sin(x * 0.06) * 12.0;
+      minD = Math.min(minD, Math.hypot(z - loopZ, 0));
+    }
+
+    // 5. Eastern Ridge switchback climb (from (10, -15) to (75, -25) to (40, 25))
+    if (x > 8 && x < 85 && z > -35 && z < 35) {
+      const ridgeZ = -15 + Math.sin(x * 0.05) * 22.0;
+      minD = Math.min(minD, Math.hypot(z - ridgeZ, 0));
+    }
+
+    return minD;
+  }
+
+  /**
+   * Real off-road surface query for realistic vehicle tire physics
+   */
+  public getSurfaceAt(x: number, z: number): SurfaceInfo {
+    // 1. Creek Ravine & River Crossing
+    if (x < -36 && x > -68 && Math.abs(z) < 28) {
+      const riverDist = Math.hypot(x - (-52), z);
+      if (riverDist < 16.0) {
+        // Deep Mountain River Ford
+        return {
+          type: 'water',
+          friction: 0.52,
+          rollingResistance: 0.58,
+          depth: 0.42,
+          bumpiness: 0.05
+        };
+      } else {
+        // Viscous Mud Pit / Bog along Riverbanks
+        return {
+          type: 'mud',
+          friction: 0.56,
+          rollingResistance: 0.42,
+          depth: 0.24,
+          bumpiness: 0.12
+        };
+      }
+    }
+
+    // 2. High Mountain Ridges (Granite Rock)
+    const y = this.getTerrainHeight(x, z);
+    if (y > 18.0) {
+      return {
+        type: 'rock',
+        friction: 0.90,
+        rollingResistance: 0.08,
+        depth: 0.0,
+        bumpiness: 0.14
+      };
+    }
+
+    // 3. Packed Off-Road Dirt Trail
+    const distTrail = this.getTrailDistance(x, z);
+    if (distTrail < 5.2) {
+      return {
+        type: 'trail',
+        friction: 0.98,
+        rollingResistance: 0.05,
+        depth: 0.02,
+        bumpiness: 0.04
+      };
+    }
+
+    // 4. Lush Alpine Meadow Grass
+    return {
+      type: 'grass',
+      friction: 0.82,
+      rollingResistance: 0.12,
+      depth: 0.06,
+      bumpiness: 0.06
+    };
   }
 
   /**
@@ -60,12 +172,12 @@ export class ForestStageMap {
     // 4. Creek Ravine (West)
     if (x < -32 && Math.abs(z) < 32) {
       const creekDist = Math.abs(x - (-52));
-      const creekDepth = Math.max(0, 1.0 - creekDist / 20.0) * 4.5;
-      const base = Math.sin(z * 0.03) * 3.5 + Math.sin(x * 0.04) * 2.2;
+      const creekDepth = Math.max(0, 1.0 - creekDist / 20.0) * 4.2;
+      const base = Math.sin(z * 0.03) * 3.2 + Math.sin(x * 0.04) * 2.0;
       return base - creekDepth;
     }
 
-    // 5. Eastern Rolling Slopes
+    // 5. Eastern Rolling Slopes & Ridge
     if (x > 35) {
       return (
         Math.sin(x * 0.03 + z * 0.025) * 6.2 +
@@ -88,7 +200,7 @@ export class ForestStageMap {
 
   private buildTerrain() {
     const size = 520;
-    const segs = 160;
+    const segs = 170;
 
     const geo = new THREE.PlaneGeometry(size, size, segs, segs);
     geo.rotateX(-Math.PI / 2);
@@ -96,13 +208,15 @@ export class ForestStageMap {
     const pos = geo.attributes.position;
     const colors = new Float32Array(pos.count * 3);
 
-    // Natural Nordic Forest Earth Palette (Rich, matte, realistic)
-    const deepSoilColor = new THREE.Color(0x32251a); // Rich dark forest earth
-    const pineMulchColor = new THREE.Color(0x281c13); // Damp pine needle mulch
-    const forestMossColor = new THREE.Color(0x23331b); // Natural alpine moss
-    const dirtRoadColor = new THREE.Color(0x3d3224); // Packed gravel dirt trail
-    const mountainRockColor = new THREE.Color(0x423e38); // Granite rock cliffs
-    const servicePadColor = new THREE.Color(0x26292d); // Weathered asphalt pad
+    // Studio Ghibli Vibrant Anime Landscape Palette
+    const ghibliLushGrass = new THREE.Color(0x56a635);     // Radiant Miyazaki Meadow Green
+    const ghibliDeepForest = new THREE.Color(0x2f6b28);    // Deep Pine Canopy Green
+    const ghibliChartreuse = new THREE.Color(0x7ac242);    // Sunlit Chartreuse Meadow
+    const ghibliTrailOchre = new THREE.Color(0xa66c42);    // Warm Terracotta Baked Dirt Trail
+    const ghibliTrailRut = new THREE.Color(0x7a4a2b);      // Dark Compressed Dirt Rut
+    const ghibliMudBog = new THREE.Color(0x4a3220);        // Wet Muddy Clay
+    const ghibliGranite = new THREE.Color(0x767882);       // Soft Anime Granite Slate
+    const ghibliServicePad = new THREE.Color(0x3a4249);    // Weathered Asphalt Pad
 
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
@@ -112,26 +226,37 @@ export class ForestStageMap {
       pos.setY(i, y);
 
       const col = new THREE.Color();
-      const distCenter = Math.hypot(x, z);
       const distS1 = Math.hypot(x - 22, z - 8);
       const distS2 = Math.hypot(x - (-85), z - (-60));
+      const distTrail = this.getTrailDistance(x, z);
 
       if (distS1 < 18 || distS2 < 16) {
-        col.copy(servicePadColor);
+        col.copy(ghibliServicePad);
       } else if (y > 18) {
         // High steep mountain crags
         const rockMix = Math.min(1.0, (y - 18) / 16.0);
-        col.copy(mountainRockColor).lerp(new THREE.Color(0x35322c), rockMix * 0.4);
-      } else if (distCenter < 32 || (Math.abs(x) < 8.0 && z > -25) || (Math.abs(z) < 7.5 && x > 4)) {
-        // Main packed dirt trail
-        col.copy(dirtRoadColor);
-      } else if (x < -34 && Math.abs(z) < 28) {
-        // Creek bed
-        col.copy(pineMulchColor).lerp(deepSoilColor, 0.5);
+        col.copy(ghibliGranite).lerp(new THREE.Color(0x8e929a), rockMix * 0.3);
+      } else if (x < -36 && x > -68 && Math.abs(z) < 28) {
+        // Creek bed & mud crossing
+        col.copy(ghibliMudBog);
+      } else if (distTrail < 5.0) {
+        // Carved Off-Road Dirt Trail (with double-rut tire grooves)
+        const t = distTrail / 5.0;
+        // Double-rut groove simulation
+        const rutEdge = Math.abs(distTrail - 2.2);
+        if (rutEdge < 1.0) {
+          col.copy(ghibliTrailRut).lerp(ghibliTrailOchre, rutEdge);
+        } else {
+          col.copy(ghibliTrailOchre).lerp(ghibliLushGrass, Math.pow(t, 2.5));
+        }
       } else {
-        // Natural organic forest loam with soft moss patches
-        const mossNoise = Math.sin(x * 0.05) * Math.cos(z * 0.05) * 0.5 + 0.5;
-        col.copy(deepSoilColor).lerp(forestMossColor, mossNoise * 0.75);
+        // Lush Ghibli rolling meadow with soft sunlit patches
+        const grassNoise = Math.sin(x * 0.04) * Math.cos(z * 0.04) * 0.5 + 0.5;
+        const sunlitNoise = Math.sin(x * 0.08 + z * 0.06) * 0.5 + 0.5;
+        col.copy(ghibliDeepForest).lerp(ghibliLushGrass, grassNoise);
+        if (sunlitNoise > 0.65) {
+          col.lerp(ghibliChartreuse, (sunlitNoise - 0.65) * 1.5);
+        }
       }
 
       colors[i * 3] = col.r;
@@ -142,22 +267,22 @@ export class ForestStageMap {
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geo.computeVertexNormals();
 
-    // Real Scanned PBR Terrain Textures from Poly Haven (CC0 Photogrammetry)
+    // PBR Mud / Soil Photogrammetry Textures blended with Ghibli vertex colors
     const texLoader = new THREE.TextureLoader();
     const diffMap = texLoader.load('/assets/textures/terrain/mud_diff_1k.jpg');
     diffMap.wrapS = THREE.RepeatWrapping;
     diffMap.wrapT = THREE.RepeatWrapping;
-    diffMap.repeat.set(38, 38);
+    diffMap.repeat.set(32, 32);
 
     const norMap = texLoader.load('/assets/textures/terrain/mud_nor_1k.jpg');
     norMap.wrapS = THREE.RepeatWrapping;
     norMap.wrapT = THREE.RepeatWrapping;
-    norMap.repeat.set(38, 38);
+    norMap.repeat.set(32, 32);
 
     const roughMap = texLoader.load('/assets/textures/terrain/mud_rough_1k.jpg');
     roughMap.wrapS = THREE.RepeatWrapping;
     roughMap.wrapT = THREE.RepeatWrapping;
-    roughMap.repeat.set(38, 38);
+    roughMap.repeat.set(32, 32);
 
     diffMap.anisotropy = 4;
     norMap.anisotropy = 4;
@@ -166,19 +291,18 @@ export class ForestStageMap {
     const mat = new THREE.MeshStandardMaterial({
       map: diffMap,
       normalMap: norMap,
-      normalScale: new THREE.Vector2(0.4, 0.4),
+      normalScale: new THREE.Vector2(0.35, 0.35),
       roughnessMap: roughMap,
       vertexColors: true,
-      roughness: 0.9,
-      metalness: 0.04,
-      flatShading: false
+      roughness: 0.85,
+      metalness: 0.02
     });
 
     const terrainMesh = new THREE.Mesh(geo, mat);
     terrainMesh.receiveShadow = true;
     this.mesh.add(terrainMesh);
 
-    // Physics trimesh
+    // Rapier physics trimesh collider
     const vertices = new Float32Array(pos.array);
     const indices = new Uint32Array(geo.index!.array);
     const bodyDesc = this.rapier.RigidBodyDesc.fixed();
@@ -188,102 +312,87 @@ export class ForestStageMap {
   }
 
   /**
-   * Generates a completely seamless, soft organic forest floor texture (NO periodic sine waves!)
+   * Studio Ghibli Crystalline Mountain Creek (Vibrant Jade-Turquoise with soft foam)
    */
-  private createMatteForestFloorTexture(): THREE.CanvasTexture {
-    const size = 512;
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d')!;
-    const img = ctx.createImageData(size, size);
-
-    // Multi-octave pseudo-random organic noise
-    const perm = new Uint8Array(512);
-    for (let i = 0; i < 512; i++) perm[i] = Math.floor(Math.random() * 256);
-
-    const noise2D = (x: number, y: number): number => {
-      const xi = Math.floor(x) & 255;
-      const yi = Math.floor(y) & 255;
-      const xf = x - Math.floor(x);
-      const yf = y - Math.floor(y);
-      const u = xf * xf * (3 - 2 * xf);
-      const v = yf * yf * (3 - 2 * yf);
-      const a = perm[xi] + yi;
-      const b = perm[xi + 1] + yi;
-      const g1 = (perm[a & 255] / 255.0);
-      const g2 = (perm[b & 255] / 255.0);
-      const g3 = (perm[(a + 1) & 255] / 255.0);
-      const g4 = (perm[(b + 1) & 255] / 255.0);
-      const x1 = g1 * (1 - u) + g2 * u;
-      const x2 = g3 * (1 - u) + g4 * u;
-      return x1 * (1 - v) + x2 * v;
-    };
-
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        const idx = (y * size + x) * 4;
-
-        // Smooth fractal noise
-        const n1 = noise2D(x * 0.04, y * 0.04);
-        const n2 = noise2D(x * 0.12, y * 0.12) * 0.5;
-        const n3 = noise2D(x * 0.3, y * 0.3) * 0.25;
-        const total = (n1 + n2 + n3) / 1.75;
-
-        // Rich, soft earth tones (RGB 110-150 range so it blends seamlessly with vertex colors)
-        const tone = Math.floor(105 + total * 45);
-        img.data[idx] = tone;
-        img.data[idx + 1] = Math.floor(tone * 0.92);
-        img.data[idx + 2] = Math.floor(tone * 0.82);
-        img.data[idx + 3] = 255;
-      }
-    }
-
-    ctx.putImageData(img, 0, 0);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(16, 16);
-    return texture;
-  }
-
-  /**
-   * Western Creek with soft reflective water
-   */
-  private buildMountainCreek() {
-    const waterGeo = new THREE.PlaneGeometry(42, 85, 8, 8);
+  private buildGhibliMountainCreek() {
+    const waterGeo = new THREE.PlaneGeometry(44, 90, 16, 16);
     waterGeo.rotateX(-Math.PI / 2);
 
     const waterMat = new THREE.MeshPhysicalMaterial({
-      color: 0x1f3c3e,
-      roughness: 0.15,
-      metalness: 0.1,
-      transmission: 0.7,
-      opacity: 0.85,
+      color: 0x22a8b8,       // Radiant Ghibli turquoise/jade water
+      roughness: 0.12,
+      metalness: 0.05,
+      transmission: 0.72,
+      opacity: 0.88,
       transparent: true,
       ior: 1.333
     });
 
     this.waterMesh = new THREE.Mesh(waterGeo, waterMat);
-    this.waterMesh.position.set(-52, -2.5, 0);
+    this.waterMesh.position.set(-52, -2.4, 0);
     this.waterMesh.receiveShadow = true;
     this.mesh.add(this.waterMesh);
   }
 
   /**
-   * Realistic, Lush Nordic Pine Trees (Trunk and 7 dense overlapping foliage tiers)
+   * Instanced Painterly Ghibli Grass Blades along trail borders and meadows
+   */
+  private buildGhibliPainterlyGrass() {
+    const grassCount = 1800;
+    // Cross-plane grass blade geometry
+    const bladeGeo = new THREE.PlaneGeometry(0.7, 1.2, 1, 2);
+    bladeGeo.translate(0, 0.6, 0); // Base at y = 0
+
+    const bladeMat = new THREE.MeshStandardMaterial({
+      color: 0x5ab838,
+      roughness: 0.8,
+      side: THREE.DoubleSide,
+      alphaTest: 0.15
+    });
+
+    this.grassMesh = new THREE.InstancedMesh(bladeGeo, bladeMat, grassCount);
+    this.grassMesh.receiveShadow = true;
+
+    const dummy = new THREE.Object3D();
+    let placed = 0;
+    let attempts = 0;
+
+    while (placed < grassCount && attempts < 5000) {
+      attempts++;
+      const x = (Math.random() - 0.5) * 320;
+      const z = (Math.random() - 0.5) * 320;
+
+      const distTrail = this.getTrailDistance(x, z);
+      // Place densely along trail borders (dist 4.5 to 14m)
+      if (distTrail < 4.2 || distTrail > 18.0) continue;
+
+      const groundY = this.getTerrainHeight(x, z);
+      if (groundY > 16.0 || groundY < -1.5) continue;
+
+      const scale = 0.7 + Math.random() * 0.6;
+      dummy.position.set(x, groundY, z);
+      dummy.scale.set(scale, scale, scale);
+      dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
+      dummy.updateMatrix();
+
+      this.grassMesh.setMatrixAt(placed, dummy.matrix);
+      placed++;
+    }
+
+    this.grassMesh.instanceMatrix.needsUpdate = true;
+    this.mesh.add(this.grassMesh);
+  }
+
+  /**
+   * Realistic, Lush Nordic Pine Trees (Loaded from GLB with procedural fallback)
    */
   private buildLushPineForest() {
     const treeCount = 240;
 
-    // Build one unified realistic Pine Tree Geometry:
-    // 1. Trunk (Cylinder centered with base at y = 0)
     const trunkHeight = 11.0;
     const trunkGeo = new THREE.CylinderGeometry(0.32, 0.65, trunkHeight, 8);
-    trunkGeo.translate(0, trunkHeight * 0.5, 0); // Base at y = 0!
+    trunkGeo.translate(0, trunkHeight * 0.5, 0);
 
-    // 2. Cascading Dense Overlapping Foliage Tiers covering trunk completely
     const tiers = [
       { radius: 4.6, height: 3.4, y: 3.0 },
       { radius: 4.0, height: 3.0, y: 4.8 },
@@ -318,13 +427,13 @@ export class ForestStageMap {
     mergedFoliageGeo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
 
     const foliageMat = new THREE.MeshStandardMaterial({
-      color: 0x162c18, // Rich dark spruce green
-      roughness: 0.8,
+      color: 0x24552b, // Lush Ghibli anime spruce green
+      roughness: 0.82,
       metalness: 0.05
     });
 
     const trunkMat = new THREE.MeshStandardMaterial({
-      color: 0x24180f, // Dark wood bark
+      color: 0x3e281a, // Warm bark
       roughness: 0.95
     });
 
@@ -343,7 +452,7 @@ export class ForestStageMap {
     let placed = 0;
     let attempts = 0;
 
-    while (placed < treeCount && attempts < 1800) {
+    while (placed < treeCount && attempts < 2200) {
       attempts++;
       const x = (Math.random() - 0.5) * 350;
       const z = (Math.random() - 0.5) * 350;
@@ -351,8 +460,10 @@ export class ForestStageMap {
       // Keep clear of roads and stations
       const distS1 = Math.hypot(x - 22, z - 8);
       const distS2 = Math.hypot(x - (-85), z - (-60));
+      const distTrail = this.getTrailDistance(x, z);
+
       if (distS1 < 24 || distS2 < 22) continue;
-      if (Math.abs(x) < 12 && Math.abs(z) < 65) continue;
+      if (distTrail < 6.5) continue; // Keep clear of off-road trail
       if (x < -36 && x > -68 && Math.abs(z) < 26) continue;
 
       const groundY = this.getTerrainHeight(x, z);
@@ -455,7 +566,6 @@ export class ForestStageMap {
           realTrunkInstanced.instanceMatrix.needsUpdate = true;
           realFoliageInstanced.instanceMatrix.needsUpdate = true;
           this.mesh.add(realTrunkInstanced, realFoliageInstanced);
-          console.log(`[ForestStageMap] Populated ${realMatrices.length} photorealistic 3D scanned Pine Trees.`);
         }
       },
       undefined,
@@ -469,12 +579,12 @@ export class ForestStageMap {
    * Granite Boulders & Rock Outcrops
    */
   private buildGraniteBoulders() {
-    const rockCount = 50;
+    const rockCount = 60;
     const rockGeo = new THREE.DodecahedronGeometry(1.6, 1);
     const rockMat = new THREE.MeshStandardMaterial({
-      color: 0x423c35,
-      roughness: 0.9,
-      metalness: 0.08
+      color: 0x5a5c64, // Anime slate granite
+      roughness: 0.88,
+      metalness: 0.05
     });
 
     const rockMesh = new THREE.InstancedMesh(rockGeo, rockMat, rockCount);
@@ -483,43 +593,30 @@ export class ForestStageMap {
 
     const dummy = new THREE.Object3D();
     let placed = 0;
-    let attempts = 0;
 
-    while (placed < rockCount && attempts < 900) {
-      attempts++;
-      const x = (Math.random() - 0.5) * 310;
-      const z = (Math.random() - 0.5) * 310;
+    for (let i = 0; i < rockCount; i++) {
+      const angle = (i / rockCount) * Math.PI * 2 + Math.random() * 0.4;
+      const radius = 45 + Math.random() * 120;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
 
-      const distS1 = Math.hypot(x - 22, z - 8);
-      const distS2 = Math.hypot(x - (-85), z - (-60));
-      if (distS1 < 20 || distS2 < 18) continue;
+      const distTrail = this.getTrailDistance(x, z);
+      if (distTrail < 5.0) continue; // Keep rocks on trail shoulders
 
       const groundY = this.getTerrainHeight(x, z);
-      const scaleX = 0.8 + Math.random() * 1.4;
-      const scaleY = 0.5 + Math.random() * 0.9;
-      const scaleZ = 0.8 + Math.random() * 1.4;
+      const scale = 0.9 + Math.random() * 1.8;
 
-      dummy.position.set(x, groundY + 0.3 * scaleY, z);
-      dummy.scale.set(scaleX, scaleY, scaleZ);
-      dummy.rotation.set(
-        Math.random() * 0.4,
-        Math.random() * Math.PI * 2,
-        Math.random() * 0.4
-      );
+      dummy.position.set(x, groundY + 0.3 * scale, z);
+      dummy.scale.set(scale * 1.2, scale * 0.75, scale);
+      dummy.rotation.set(Math.random() * 0.4, Math.random() * Math.PI, Math.random() * 0.4);
       dummy.updateMatrix();
+
       rockMesh.setMatrixAt(placed, dummy.matrix);
 
-      const bodyDesc = this.rapier.RigidBodyDesc.fixed().setTranslation(
-        x,
-        groundY + 0.3 * scaleY,
-        z
-      );
+      // Physics rock collider
+      const bodyDesc = this.rapier.RigidBodyDesc.fixed().setTranslation(x, groundY + 0.6 * scale, z);
       const body = this.world.createRigidBody(bodyDesc);
-      const col = this.rapier.ColliderDesc.cuboid(
-        scaleX * 1.1,
-        scaleY * 0.7,
-        scaleZ * 1.1
-      ).setFriction(0.9);
+      const col = this.rapier.ColliderDesc.ball(1.1 * scale);
       this.world.createCollider(col, body);
 
       placed++;
@@ -530,199 +627,169 @@ export class ForestStageMap {
   }
 
   /**
-   * High-Quality Industrial Petrol Station
+   * Rustic Timber Rally Gates, Corduroy Log Bridges & Trail Markers
    */
-  private buildGasStations() {
-    this.createPetrolStation(new THREE.Vector3(22, 0, 8), 'VALLEY RALLY SERVICE');
-    this.gasStations.push({ pos: new THREE.Vector3(22, 0, 8), radius: 8.5 });
-
-    const outpostY = this.getTerrainHeight(-85, -60);
-    this.createPetrolStation(new THREE.Vector3(-85, outpostY, -60), 'OUTPOST REFUEL');
-    this.gasStations.push({ pos: new THREE.Vector3(-85, outpostY, -60), radius: 8.5 });
-  }
-
-  private createPetrolStation(pos: THREE.Vector3, stationName: string) {
-    const station = new THREE.Group();
-
-    // Industrial Materials
-    const darkRoofMat = new THREE.MeshStandardMaterial({
-      color: 0x181c22,
-      roughness: 0.4,
-      metalness: 0.7
+  private buildRallyObstaclesAndBridges() {
+    const woodMat = new THREE.MeshStandardMaterial({
+      color: 0x563824, // Warm timber log
+      roughness: 0.85
     });
 
-    const steelColumnMat = new THREE.MeshStandardMaterial({
-      color: 0x64748b,
-      roughness: 0.3,
-      metalness: 0.85
+    const bannerMat = new THREE.MeshStandardMaterial({
+      color: 0xd93829, // Vibrant Rally Red Banner
+      roughness: 0.7
     });
 
-    const pumpHousingMat = new THREE.MeshStandardMaterial({
-      color: 0xd97706, // Industrial amber pump
-      roughness: 0.35,
-      metalness: 0.5
-    });
+    // 1. Trailhead Start Gate at (0, 0, 18)
+    const gateGroup = new THREE.Group();
+    gateGroup.position.set(0, 0, 18);
 
-    const neonSignMat = new THREE.MeshStandardMaterial({
-      color: 0x3b82f6,
-      emissive: 0x1d4ed8,
-      emissiveIntensity: 1.8
-    });
+    const postGeo = new THREE.CylinderGeometry(0.35, 0.4, 6.5, 8);
+    const postL = new THREE.Mesh(postGeo, woodMat);
+    postL.position.set(-5.5, 3.25, 0);
+    postL.castShadow = true;
 
-    // 1. Concrete Service Apron (Flush ground pad, no tripping curb!)
-    const islandGeo = new THREE.BoxGeometry(4.0, 0.05, 12.0);
-    const islandMat = new THREE.MeshStandardMaterial({ color: 0x3b4252, roughness: 0.85 });
-    const island = new THREE.Mesh(islandGeo, islandMat);
-    island.position.y = 0.025;
-    island.receiveShadow = true;
-    station.add(island);
+    const postR = new THREE.Mesh(postGeo, woodMat);
+    postR.position.set(5.5, 3.25, 0);
+    postR.castShadow = true;
 
-    // 2. Realistic Dual Fuel Dispensers
-    for (const pz of [-3.2, 3.2]) {
-      const pumpGroup = new THREE.Group();
+    const beamGeo = new THREE.CylinderGeometry(0.3, 0.3, 12.0, 8);
+    const beam = new THREE.Mesh(beamGeo, woodMat);
+    beam.rotation.z = Math.PI / 2;
+    beam.position.set(0, 6.0, 0);
+    beam.castShadow = true;
 
-      const bodyGeo = new THREE.BoxGeometry(1.2, 2.2, 0.9);
-      const pumpBody = new THREE.Mesh(bodyGeo, pumpHousingMat);
-      pumpBody.position.y = 1.1;
-      pumpBody.castShadow = true;
+    const bannerGeo = new THREE.PlaneGeometry(8.5, 1.4);
+    const banner = new THREE.Mesh(bannerGeo, bannerMat);
+    banner.position.set(0, 5.0, 0);
 
-      // Digital Lit LED Screen
-      const screenGeo = new THREE.BoxGeometry(0.8, 0.45, 0.92);
-      const screenMat = new THREE.MeshStandardMaterial({
-        color: 0x064e3b,
-        emissive: 0x10b981,
-        emissiveIntensity: 2.2
-      });
-      const screen = new THREE.Mesh(screenGeo, screenMat);
-      screen.position.y = 1.4;
+    gateGroup.add(postL, postR, beam, banner);
+    this.mesh.add(gateGroup);
 
-      // Hose & Nozzles
-      const hoseGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.6, 8);
-      const hoseMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
-      const hoseL = new THREE.Mesh(hoseGeo, hoseMat);
-      hoseL.position.set(-0.62, 1.0, 0);
-      const hoseR = hoseL.clone();
-      hoseR.position.x = 0.62;
+    // Colliders for gate posts
+    const postColL = this.rapier.ColliderDesc.cylinder(3.25, 0.4);
+    const bodyL = this.world.createRigidBody(this.rapier.RigidBodyDesc.fixed().setTranslation(-5.5, 3.25, 18));
+    this.world.createCollider(postColL, bodyL);
 
-      pumpGroup.add(pumpBody, screen, hoseL, hoseR);
-      pumpGroup.position.z = pz;
-      station.add(pumpGroup);
+    const postColR = this.rapier.ColliderDesc.cylinder(3.25, 0.4);
+    const bodyR = this.world.createRigidBody(this.rapier.RigidBodyDesc.fixed().setTranslation(5.5, 3.25, 18));
+    this.world.createCollider(postColR, bodyR);
 
-      const pBodyDesc = this.rapier.RigidBodyDesc.fixed().setTranslation(
-        pos.x,
-        pos.y + 1.1,
-        pos.z + pz
-      );
-      const pBody = this.world.createRigidBody(pBodyDesc);
-      const col = this.rapier.ColliderDesc.cuboid(0.6, 1.1, 0.45);
-      this.world.createCollider(col, pBody);
-    }
+    // 2. Corduroy Log Bridge over Mud Ravine at (-52, 0, 22)
+    const bridgeGroup = new THREE.Group();
+    bridgeGroup.position.set(-52, -1.8, 22);
 
-    // 3. Overhead Steel Canopy Roof
-    const roofGeo = new THREE.BoxGeometry(10.2, 0.7, 16.2);
-    const roof = new THREE.Mesh(roofGeo, darkRoofMat);
-    roof.position.y = 6.0;
-    roof.castShadow = true;
+    const logCount = 14;
+    const logGeo = new THREE.CylinderGeometry(0.28, 0.30, 8.5, 8);
+    logGeo.rotateZ(Math.PI / 2);
 
-    // Illuminated Fascia Trim
-    const signGeo = new THREE.BoxGeometry(10.4, 0.6, 1.0);
-    const signFront = new THREE.Mesh(signGeo, neonSignMat);
-    signFront.position.set(0, 6.0, 8.0);
-    station.add(roof, signFront);
-
-    // Heavy Steel I-Beams / Columns
-    const colGeo = new THREE.CylinderGeometry(0.28, 0.28, 5.8, 12);
-    for (const cx of [-3.8, 3.8]) {
-      for (const cz of [-6.0, 6.0]) {
-        const pillar = new THREE.Mesh(colGeo, steelColumnMat);
-        pillar.position.set(cx, 2.9, cz);
-        pillar.castShadow = true;
-        station.add(pillar);
-
-        const colBodyDesc = this.rapier.RigidBodyDesc.fixed().setTranslation(
-          pos.x + cx,
-          pos.y + 2.9,
-          pos.z + cz
-        );
-        const colBody = this.world.createRigidBody(colBodyDesc);
-        const cCol = this.rapier.ColliderDesc.cylinder(2.9, 0.28);
-        this.world.createCollider(cCol, colBody);
-      }
-    }
-
-    // Warm Under-Canopy Lighting
-    const bayLight = new THREE.PointLight(0xfffaea, 3.5, 24, 1.2);
-    bayLight.position.set(0, 5.5, 0);
-    bayLight.castShadow = true;
-    station.add(bayLight);
-
-    // Glowing Green Refueling Area Pad Ring
-    const triggerRingGeo = new THREE.RingGeometry(2.5, 3.2, 28);
-    triggerRingGeo.rotateX(-Math.PI / 2);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: 0x22c55e,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.85
-    });
-    const triggerRing = new THREE.Mesh(triggerRingGeo, ringMat);
-    triggerRing.position.y = 0.22;
-    station.add(triggerRing);
-
-    station.position.copy(pos);
-    this.mesh.add(station);
-  }
-
-  private buildForestObstacles() {
-    // Heavy Log Bridge spanning Creek Ravine
-    const bridgeY = this.getTerrainHeight(-42, 0);
-    this.createLogBridge(new THREE.Vector3(-42, bridgeY, 0), 18, 5.5);
-
-    // Fallen Trunk Obstacles on Trails
-    const log1Y = this.getTerrainHeight(0, 45);
-    this.createFallenLog(new THREE.Vector3(0, log1Y + 0.4, 45), 12, 0.65, 0.2);
-
-    const log2Y = this.getTerrainHeight(65, -30);
-    this.createFallenLog(new THREE.Vector3(65, log2Y + 0.4, -30), 10, 0.75, -0.4);
-  }
-
-  private createLogBridge(pos: THREE.Vector3, length: number, width: number) {
-    const bridge = new THREE.Group();
-    const logMat = new THREE.MeshStandardMaterial({ color: 0x3d2b1f, roughness: 0.9 });
-
-    for (let lz = -length * 0.5; lz <= length * 0.5; lz += 0.55) {
-      const logGeo = new THREE.CylinderGeometry(0.24, 0.24, width, 8);
-      const log = new THREE.Mesh(logGeo, logMat);
-      log.rotation.z = Math.PI / 2;
-      log.position.set(0, 0, lz);
+    for (let l = 0; l < logCount; l++) {
+      const log = new THREE.Mesh(logGeo, woodMat);
+      log.position.set(0, 0, (l - logCount * 0.5) * 0.7);
       log.castShadow = true;
       log.receiveShadow = true;
-      bridge.add(log);
+      bridgeGroup.add(log);
     }
 
-    bridge.position.copy(pos);
-    this.mesh.add(bridge);
+    this.mesh.add(bridgeGroup);
 
-    const bodyDesc = this.rapier.RigidBodyDesc.fixed().setTranslation(pos.x, pos.y, pos.z);
-    const body = this.world.createRigidBody(bodyDesc);
-    const col = this.rapier.ColliderDesc.cuboid(width * 0.5, 0.25, length * 0.5).setFriction(0.9);
-    this.world.createCollider(col, body);
+    // Physics collider for the log bridge deck
+    const bridgeCol = this.rapier.ColliderDesc.cuboid(4.25, 0.3, logCount * 0.35 + 0.5);
+    const bridgeBody = this.world.createRigidBody(
+      this.rapier.RigidBodyDesc.fixed().setTranslation(-52, -1.8, 22)
+    );
+    this.world.createCollider(bridgeCol, bridgeBody);
   }
 
-  private createFallenLog(pos: THREE.Vector3, length: number, radius: number, rotY: number) {
-    const logGeo = new THREE.CylinderGeometry(radius, radius, length, 10);
-    const logMat = new THREE.MeshStandardMaterial({ color: 0x332216, roughness: 0.95 });
-    const log = new THREE.Mesh(logGeo, logMat);
-    log.rotation.z = Math.PI / 2;
-    log.rotation.y = rotY;
-    log.position.copy(pos);
-    log.castShadow = true;
-    log.receiveShadow = true;
-    this.mesh.add(log);
+  /**
+   * Functional Alpine Petrol Stations with Vintage Ghibli Aesthetic
+   */
+  private buildGasStations() {
+    this.gasStations = [
+      { pos: new THREE.Vector3(22, 0, 8), radius: 14 },
+      { pos: new THREE.Vector3(-85, 1.8, -60), radius: 14 }
+    ];
 
-    const bodyDesc = this.rapier.RigidBodyDesc.fixed().setTranslation(pos.x, pos.y, pos.z);
-    const body = this.world.createRigidBody(bodyDesc);
-    const col = this.rapier.ColliderDesc.cylinder(length * 0.5, radius);
-    this.world.createCollider(col, body);
+    this.gasStations.forEach((station, index) => {
+      const stationGroup = new THREE.Group();
+      stationGroup.position.copy(station.pos);
+
+      // Station Ground Service Pad
+      const padGeo = new THREE.CylinderGeometry(12, 12, 0.05, 32);
+      const padMat = new THREE.MeshStandardMaterial({
+        color: 0x363a40,
+        roughness: 0.85
+      });
+      const padMesh = new THREE.Mesh(padGeo, padMat);
+      padMesh.position.y = 0.025;
+      padMesh.receiveShadow = true;
+      stationGroup.add(padMesh);
+
+      // Timber Canopy Shelter
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0x4d3222, roughness: 0.85 });
+      const roofMat = new THREE.MeshStandardMaterial({ color: 0x224838, roughness: 0.6 }); // Dark green tin roof
+
+      const poleGeo = new THREE.CylinderGeometry(0.2, 0.2, 5.0, 8);
+      const poles = [
+        new THREE.Vector3(-4.5, 2.5, -4.5),
+        new THREE.Vector3(4.5, 2.5, -4.5),
+        new THREE.Vector3(-4.5, 2.5, 4.5),
+        new THREE.Vector3(4.5, 2.5, 4.5)
+      ];
+
+      poles.forEach((p) => {
+        const pole = new THREE.Mesh(poleGeo, woodMat);
+        pole.position.copy(p);
+        pole.castShadow = true;
+        stationGroup.add(pole);
+
+        const col = this.rapier.ColliderDesc.cylinder(2.5, 0.25);
+        const bodyDesc = this.rapier.RigidBodyDesc.fixed().setTranslation(
+          station.pos.x + p.x,
+          station.pos.y + 2.5,
+          station.pos.z + p.z
+        );
+        const b = this.world.createRigidBody(bodyDesc);
+        this.world.createCollider(col, b);
+      });
+
+      // Roof Canopy
+      const roofGeo = new THREE.BoxGeometry(11, 0.45, 11);
+      const roof = new THREE.Mesh(roofGeo, roofMat);
+      roof.position.set(0, 5.2, 0);
+      roof.castShadow = true;
+      stationGroup.add(roof);
+
+      // Fuel Pumps with glowing Ghibli lantern
+      const pumpGeo = new THREE.BoxGeometry(1.0, 2.2, 0.9);
+      const pumpMat = new THREE.MeshStandardMaterial({
+        color: 0xd64434, // Classic Red Pump
+        roughness: 0.4,
+        metalness: 0.3
+      });
+
+      [-2.2, 2.2].forEach((offsetZ) => {
+        const pump = new THREE.Mesh(pumpGeo, pumpMat);
+        pump.position.set(0, 1.1, offsetZ);
+        pump.castShadow = true;
+        stationGroup.add(pump);
+
+        const pumpCol = this.rapier.ColliderDesc.cuboid(0.5, 1.1, 0.45);
+        const bodyDesc = this.rapier.RigidBodyDesc.fixed().setTranslation(
+          station.pos.x,
+          station.pos.y + 1.1,
+          station.pos.z + offsetZ
+        );
+        const b = this.world.createRigidBody(bodyDesc);
+        this.world.createCollider(pumpCol, b);
+      });
+
+      // Warm Glowing Lantern Light under canopy
+      const lanternLight = new THREE.PointLight(0xffb555, 3.0, 18.0);
+      lanternLight.position.set(0, 4.2, 0);
+      stationGroup.add(lanternLight);
+
+      this.mesh.add(stationGroup);
+    });
   }
 }
