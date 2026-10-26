@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Offroad Legends 3D - Dakar Prototype</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #111;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      touch-action: none;
+    }
+    #game-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      z-index: 1;
+    }
+    #ui-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 16px;
+    }
+    .hud-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .badge-card {
+      background: rgba(18, 18, 24, 0.75);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      padding: 10px 16px;
+      color: #fff;
+    }
+    .game-title {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #ff9800;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .game-sub {
+      font-size: 11px;
+      color: #aaa;
+      margin-top: 2px;
+    }
+    .speedo-card {
+      text-align: right;
+    }
+    .speed-number {
+      font-size: 38px;
+      font-weight: 900;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      color: #fff;
+    }
+    .speed-unit {
+      font-size: 12px;
+      font-weight: 700;
+      color: #ff9800;
+      letter-spacing: 1px;
+    }
+    .stats-card {
+      font-size: 11px;
+      color: #bbb;
+      margin-top: 6px;
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+    .stat-val {
+      font-weight: bold;
+      color: #eee;
+    }
+    .timer-card {
+      text-align: center;
+      min-width: 140px;
+    }
+    .timer-title {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      color: #ff9800;
+    }
+    .timer-time {
+      font-size: 26px;
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      color: #fff;
+    }
+    .timer-best {
+      font-size: 10px;
+      font-weight: 700;
+      color: #aaa;
+      letter-spacing: 0.5px;
+    }
+    /* Fuel Gauge */
+    .fuel-card {
+      min-width: 150px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .fuel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      color: #aaa;
+    }
+    .fuel-title {
+      color: #3b82f6;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .fuel-val {
+      color: #fff;
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+    }
+    .fuel-track {
+      width: 100%;
+      height: 9px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    .fuel-fill {
+      width: 75%;
+      height: 100%;
+      background: #3b82f6;
+      border-radius: 5px;
+      transition: width 0.15s ease, background 0.3s ease;
+      box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+    }
+    .fuel-badge {
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-align: center;
+      letter-spacing: 1px;
+      animation: pulse 0.5s infinite alternate;
+    }
+    .fuel-badge.hidden {
+      display: none;
+    }
+    .fuel-badge.refueling {
+      background: #22c55e;
+      color: #000;
+      display: block;
+    }
+    .fuel-badge.low {
+      background: #f59e0b;
+      color: #000;
+      display: block;
+    }
+    .fuel-badge.empty {
+      background: #ef4444;
+      color: #fff;
+      display: block;
+    }
+    /* Action Buttons (Reset, Camera) */
+    .top-actions {
+      display: flex;
+      gap: 8px;
+      pointer-events: auto;
+    }
+    .btn-action {
+      background: rgba(30, 30, 40, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .btn-action:hover, .btn-action:active {
+      background: #ff9800;
+      color: #111;
+      border-color: #ff9800;
+    }
+
+    /* Touch Controls */
+    #touch-controls {
+      display: none;
+      width: 100%;
+      justify-content: space-between;
+      align-items: flex-end;
+      pointer-events: none;
+      padding-bottom: 8px;
+    }
+    .touch-group {
+      display: flex;
+      gap: 12px;
+      pointer-events: auto;
+    }
+    .touch-btn {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: rgba(25, 25, 35, 0.75);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      border: 2px solid rgba(255, 255, 255, 0.25);
+      color: #fff;
+      font-size: 20px;
+      font-weight: 900;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      transition: transform 0.1s ease, background 0.1s ease, border-color 0.1s ease;
+    }
+    .touch-btn.active {
+      background: #ff9800;
+      color: #111;
+      border-color: #ff9800;
+      transform: scale(0.92);
+    }
+    .pedal-btn {
+      width: 70px;
+      height: 90px;
+      border-radius: 18px;
+    }
+    .pedal-gas {
+      background: rgba(30, 140, 60, 0.6);
+      border-color: rgba(72, 239, 128, 0.4);
+    }
+    .pedal-gas.active {
+      background: #22c55e;
+      color: #000;
+    }
+    .pedal-brake {
+      background: rgba(180, 40, 40, 0.6);
+      border-color: rgba(248, 113, 113, 0.4);
+    }
+    .pedal-brake.active {
+      background: #ef4444;
+      color: #fff;
+    }
+    .pedal-hb {
+      width: 60px;
+      height: 80px;
+      font-size: 13px;
+      background: rgba(220, 38, 38, 0.4);
+      border-color: rgba(239, 68, 68, 0.6);
+    }
+    .pedal-hb.active {
+      background: #dc2626;
+      color: #fff;
+      transform: scale(0.92);
+      box-shadow: 0 0 20px rgba(239, 68, 68, 0.8);
+    }
+    .hb-indicator {
+      display: none;
+      background: #dc2626;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 1.5px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      box-shadow: 0 0 12px rgba(220, 38, 38, 0.7);
+      margin-top: 6px;
+      text-align: center;
+      animation: pulse 0.5s infinite alternate;
+    }
+    .hb-indicator.visible {
+      display: inline-block;
+    }
+    @keyframes pulse {
+      from { opacity: 0.8; }
+      to { opacity: 1.0; }
+    }
+    .desktop-hints {
+      font-size: 11px;
+      color: #888;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 6px 12px;
+      border-radius: 8px;
+      align-self: center;
+      text-align: center;
+    }
+    .desktop-hints kbd {
+      background: #333;
+      color: #fff;
+      padding: 2px 5px;
+      border-radius: 4px;
+      border: 1px solid #555;
+      font-family: inherit;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <div id="ui-overlay">
+    <!-- Header: Title & Speedometer -->
+    <div class="hud-header">
+      <div class="badge-card">
+        <div class="game-title">
+          <span>🌲</span>
+          <span>OFFROAD TRUCKS X</span>
+        </div>
+        <div class="game-sub">Deep Forest Trails • Cougar 6x6 Off-Road</div>
+      </div>
+
+      <!-- Fuel Gauge Widget -->
+      <div class="badge-card fuel-card">
+        <div class="fuel-header">
+          <span class="fuel-title">⛽ FUEL</span>
+          <span id="fuel-val" class="fuel-val">75L</span>
+        </div>
+        <div class="fuel-track">
+          <div id="fuel-bar" class="fuel-fill"></div>
+        </div>
+        <div id="fuel-badge" class="fuel-badge hidden">⚠️ LOW FUEL</div>
+      </div>
+
+      <div class="badge-card timer-card">
+        <div class="timer-title">⏱️ STAGE 1</div>
+        <div id="stage-timer" class="timer-time">00:00.0</div>
+        <div id="stage-best" class="timer-best">BEST: --:--.-</div>
+      </div>
+
+      <div class="top-actions">
+        <button id="btn-sound" class="btn-action">🔊 <span id="sound-label">Sound ON</span></button>
+        <button id="btn-cam" class="btn-action">📷 <span id="cam-label">Chase</span></button>
+        <button id="btn-reset" class="btn-action">🔄 Reset (R)</button>
+      </div>
+
+      <div class="badge-card speedo-card">
+        <div>
+          <span id="speed-val" class="speed-number">0</span>
+          <span class="speed-unit">KM/H</span>
+        </div>
+        <div class="stats-card">
+          <span>Airtime: <span id="airtime-val" class="stat-val">0.0s</span></span>
+          <span>Gear: <span id="gear-val" class="stat-val">D</span></span>
+        </div>
+        <div id="hb-badge" class="hb-indicator">DRIFT / HANDBRAKE</div>
+      </div>
+    </div>
+
+    <!-- Desktop controls hint -->
+    <div id="desktop-hints" class="desktop-hints">
+      Drive: <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> &nbsp;|&nbsp;
+      Free Look: <kbd>Click & Drag Mouse</kbd> &nbsp;|&nbsp;
+      Zoom: <kbd>Scroll Wheel</kbd> &nbsp;|&nbsp;
+      Handbrake: <kbd>Space</kbd> &nbsp;|&nbsp;
+      Reset: <kbd>R</kbd> &nbsp;|&nbsp;
+      Cam: <kbd>C</kbd>
+    </div>
+
+    <!-- Mobile Touch Controls -->
+    <div id="touch-controls">
+      <!-- Steering (Left) -->
+      <div class="touch-group">
+        <div id="btn-steer-left" class="touch-btn">◀</div>
+        <div id="btn-steer-right" class="touch-btn">▶</div>
+      </div>
+      <!-- Pedals (Right) -->
+      <div class="touch-group">
+        <div id="btn-handbrake" class="touch-btn pedal-btn pedal-hb">DRIFT<br>HB</div>
+        <div id="btn-brake" class="touch-btn pedal-btn pedal-brake">REV<br>BRK</div>
+        <div id="btn-gas" class="touch-btn pedal-btn pedal-gas">GAS</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
