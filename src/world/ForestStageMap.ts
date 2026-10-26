@@ -120,62 +120,96 @@ export class ForestStageMap {
   }
 
   /**
-   * Instanced Dense Pine Forest (280+ Pine Trees)
+   * Instanced Dense Multi-Tiered Pine Forest (Realistic Branch Architecture)
    */
   private buildPineForest() {
-    const treeCount = 260;
+    const treeCount = 240;
 
-    // Conical Pine Foliage Geometry
-    const pineGeo = new THREE.ConeGeometry(3.5, 9.0, 7);
-    const pineMat = new THREE.MeshStandardMaterial({
-      color: 0x1d3a1f, // Deep Forest Evergreen
-      roughness: 0.8,
-      metalness: 0.05
+    // Build Realistic 4-Tier Branch Cluster Geometry
+    const branchGeos: THREE.BufferGeometry[] = [];
+    const tierParams = [
+      { radius: 3.8, height: 3.2, y: 3.5 },
+      { radius: 3.1, height: 2.8, y: 5.5 },
+      { radius: 2.3, height: 2.5, y: 7.2 },
+      { radius: 1.5, height: 2.2, y: 8.8 },
+      { radius: 0.8, height: 1.8, y: 10.0 }
+    ];
+
+    tierParams.forEach((t) => {
+      const cone = new THREE.ConeGeometry(t.radius, t.height, 9);
+      cone.translate(0, t.y, 0);
+      branchGeos.push(cone);
     });
-    const foliageMesh = new THREE.InstancedMesh(pineGeo, pineMat, treeCount);
-    foliageMesh.castShadow = true;
 
-    // Wood Trunk Geometry
-    const trunkGeo = new THREE.CylinderGeometry(0.4, 0.55, 4.0, 6);
+    // Merge tiers into a single complex evergreen branch canopy
+    const mergedPineGeo = new THREE.BufferGeometry();
+    let totalVerts = 0;
+    branchGeos.forEach(g => { totalVerts += g.attributes.position.count; });
+    const positions = new Float32Array(totalVerts * 3);
+    const normals = new Float32Array(totalVerts * 3);
+
+    let offset = 0;
+    branchGeos.forEach(g => {
+      const p = g.attributes.position.array;
+      const n = g.attributes.normal.array;
+      positions.set(p, offset * 3);
+      normals.set(n, offset * 3);
+      offset += g.attributes.position.count;
+    });
+
+    mergedPineGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    mergedPineGeo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+
+    const pineMat = new THREE.MeshStandardMaterial({
+      color: 0x18331a, // Dark Pacific Northwest Pine Green
+      roughness: 0.75,
+      metalness: 0.08
+    });
+    const foliageMesh = new THREE.InstancedMesh(mergedPineGeo, pineMat, treeCount);
+    foliageMesh.castShadow = true;
+    foliageMesh.receiveShadow = true;
+
+    // Wood Bark Trunk Geometry
+    const trunkGeo = new THREE.CylinderGeometry(0.35, 0.6, 5.5, 8);
     const trunkMat = new THREE.MeshStandardMaterial({
-      color: 0x3d2b1f, // Wood bark
-      roughness: 0.9
+      color: 0x2b1e15, // Rough Dark Pine Bark
+      roughness: 0.95,
+      metalness: 0.05
     });
     const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
     trunkMesh.castShadow = true;
+    trunkMesh.receiveShadow = true;
 
-    const dummyFoliage = new THREE.Object3D();
-    const dummyTrunk = new THREE.Object3D();
+    const dummy = new THREE.Object3D();
 
     let placed = 0;
     while (placed < treeCount) {
-      // Scatter throughout forest, keeping the central trail open
       const x = (Math.random() - 0.5) * 380;
       const z = (Math.random() - 0.5) * 380;
 
-      // Avoid spawning on the main road and gas station
-      if (Math.abs(x - 20) < 25 && Math.abs(z) < 25) continue;
+      // Avoid road & gas station
+      if (Math.abs(x - 20) < 26 && Math.abs(z) < 26) continue;
       if (Math.abs(x) < 14 && Math.abs(z) < 70) continue;
 
-      const scale = 0.8 + Math.random() * 0.6;
+      const scale = 0.85 + Math.random() * 0.55;
       const yOffset = Math.sin(x * 0.035 + z * 0.03) * 6.0;
 
-      // Position Trunk
-      dummyTrunk.position.set(x, yOffset + 2.0 * scale, z);
-      dummyTrunk.scale.set(scale, scale, scale);
-      dummyTrunk.updateMatrix();
-      trunkMesh.setMatrixAt(placed, dummyTrunk.matrix);
+      // Place Trunk
+      dummy.position.set(x, yOffset + 2.75 * scale, z);
+      dummy.scale.set(scale, scale, scale);
+      dummy.rotation.set(0, Math.random() * Math.PI, 0);
+      dummy.updateMatrix();
+      trunkMesh.setMatrixAt(placed, dummy.matrix);
 
-      // Position Foliage Cone
-      dummyFoliage.position.set(x, yOffset + 6.5 * scale, z);
-      dummyFoliage.scale.set(scale, scale, scale);
-      dummyFoliage.updateMatrix();
-      foliageMesh.setMatrixAt(placed, dummyFoliage.matrix);
+      // Place Foliage
+      dummy.position.set(x, yOffset, z);
+      dummy.updateMatrix();
+      foliageMesh.setMatrixAt(placed, dummy.matrix);
 
-      // Add Rapier Tree Trunk Collider
-      const bodyDesc = this.rapier.RigidBodyDesc.fixed().setTranslation(x, yOffset + 2.0 * scale, z);
+      // Add Physics Trunk Collider
+      const bodyDesc = this.rapier.RigidBodyDesc.fixed().setTranslation(x, yOffset + 2.75 * scale, z);
       const body = this.world.createRigidBody(bodyDesc);
-      const col = this.rapier.ColliderDesc.cylinder(2.0 * scale, 0.45 * scale);
+      const col = this.rapier.ColliderDesc.cylinder(2.75 * scale, 0.45 * scale);
       this.world.createCollider(col, body);
 
       placed++;
@@ -184,6 +218,61 @@ export class ForestStageMap {
     foliageMesh.instanceMatrix.needsUpdate = true;
     trunkMesh.instanceMatrix.needsUpdate = true;
     this.mesh.add(trunkMesh, foliageMesh);
+
+    // Build Ground Fern & Grass Clumps
+    this.buildGroundFoliage();
+  }
+
+  /**
+   * 400+ Instanced Wild Grass and Fern Foliage along trail edges
+   */
+  private buildGroundFoliage() {
+    const grassCount = 420;
+
+    // Cross-quad grass tuft geometry
+    const quad1 = new THREE.PlaneGeometry(1.6, 1.2);
+    const quad2 = new THREE.PlaneGeometry(1.6, 1.2);
+    quad2.rotateY(Math.PI / 2);
+
+    const grassGeo = new THREE.BufferGeometry();
+    const q1p = quad1.attributes.position.array;
+    const q2p = quad2.attributes.position.array;
+    const gPos = new Float32Array(q1p.length + q2p.length);
+    gPos.set(q1p, 0);
+    gPos.set(q2p, q1p.length);
+    grassGeo.setAttribute('position', new THREE.BufferAttribute(gPos, 3));
+    grassGeo.computeVertexNormals();
+
+    const grassMat = new THREE.MeshStandardMaterial({
+      color: 0x4a7332, // Vibrant Meadow / Fern Green
+      roughness: 0.7,
+      metalness: 0.1,
+      side: THREE.DoubleSide
+    });
+
+    const grassMesh = new THREE.InstancedMesh(grassGeo, grassMat, grassCount);
+    grassMesh.receiveShadow = true;
+
+    const dummy = new THREE.Object3D();
+    for (let i = 0; i < grassCount; i++) {
+      // Cluster along trail sides and tree bases
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 12 + Math.random() * 140;
+      const x = Math.cos(angle) * dist;
+      const z = Math.sin(angle) * dist;
+      const yOffset = Math.sin(x * 0.035 + z * 0.03) * 6.0;
+
+      dummy.position.set(x, yOffset + 0.6, z);
+      dummy.rotation.set(0, Math.random() * Math.PI, 0);
+      const sc = 0.8 + Math.random() * 0.7;
+      dummy.scale.set(sc, sc, sc);
+      dummy.updateMatrix();
+
+      grassMesh.setMatrixAt(i, dummy.matrix);
+    }
+
+    grassMesh.instanceMatrix.needsUpdate = true;
+    this.mesh.add(grassMesh);
   }
 
   /**

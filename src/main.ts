@@ -10,6 +10,7 @@ import { RallyEngineAudio } from './audio/RallyEngineAudio';
 import { AudioManager } from './audio/AudioManager';
 import { DustParticleSystem } from './effects/DustParticles';
 import { Atmosphere } from './effects/Atmosphere';
+import { PostProcessingManager } from './effects/PostProcessing';
 import { StageTimer } from './gameplay/StageTimer';
 import { FuelSystem } from './gameplay/FuelSystem';
 
@@ -17,6 +18,7 @@ class Game {
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
   private cameraController!: FollowCamera;
+  private postProcessing!: PostProcessingManager;
   private physics!: PhysicsWorld;
   private vehicle!: RaycastVehicle;
   private fallbackTruckModel!: TruckModel;
@@ -59,13 +61,16 @@ class Game {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
 
-    // 2. Scene & Atmosphere (Physically-based Nishita Sky & Lighting)
+    // 2. Scene & Atmosphere (Physically-based Nishita Sky, IBL Reflections & Lighting)
     this.scene = new THREE.Scene();
-    this.atmosphere = new Atmosphere(this.scene);
+    this.atmosphere = new Atmosphere(this.scene, this.renderer);
 
     // 3. Initialize Camera & Input
     this.cameraController = new FollowCamera(window.innerWidth / window.innerHeight);
     this.input = new InputManager();
+
+    // 4. Initialize Post-Processing (Bloom, SSAO, Cinematic Film Grading & Vignette)
+    this.postProcessing = new PostProcessingManager(this.renderer, this.scene, this.cameraController.camera);
 
     // 4. Initialize Audio & Particle Systems
     this.rallyAudio = new RallyEngineAudio();
@@ -148,6 +153,7 @@ class Game {
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.0));
     this.cameraController.handleResize(width / height);
+    this.postProcessing.setSize(width, height);
   }
 
   private animate = () => {
@@ -263,8 +269,8 @@ class Game {
     // Update HUD Telemetry
     this.updateHUD(inputState.throttle);
 
-    // Render Scene
-    this.renderer.render(this.scene, this.cameraController.camera);
+    // Render Scene with Cinematic Post-Processing Pipeline
+    this.postProcessing.render();
   };
 
   private updateHUD(throttleInput: number) {

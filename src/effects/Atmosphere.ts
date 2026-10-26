@@ -7,31 +7,31 @@ export class Atmosphere {
   public hemiLight: THREE.HemisphereLight;
   public sunPosition: THREE.Vector3 = new THREE.Vector3();
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Scene, renderer?: THREE.WebGLRenderer) {
     // 1. Physically-Based Nishita Atmospheric Sky
     this.sky = new Sky();
     this.sky.scale.setScalar(450000);
     scene.add(this.sky);
 
     const skyUniforms = this.sky.material.uniforms;
-    skyUniforms['turbidity'].value = 8.5; // Desert dust haze
-    skyUniforms['rayleigh'].value = 1.8; // Atmospheric sky blue
+    skyUniforms['turbidity'].value = 6.5; // Crisp alpine atmosphere
+    skyUniforms['rayleigh'].value = 1.4; // Mountain sky blue
     skyUniforms['mieCoefficient'].value = 0.005;
     skyUniforms['mieDirectionalG'].value = 0.82;
 
-    // Golden Hour Sun Position (Elevation ~18 degrees, Azimuth ~140 degrees)
-    const elevation = 18;
-    const azimuth = 140;
+    // Golden Hour Sun Position (Elevation ~22 degrees, Azimuth ~135 degrees)
+    const elevation = 22;
+    const azimuth = 135;
     const phi = THREE.MathUtils.degToRad(90 - elevation);
     const theta = THREE.MathUtils.degToRad(azimuth);
     this.sunPosition.setFromSphericalCoords(1, phi, theta);
     skyUniforms['sunPosition'].value.copy(this.sunPosition);
 
     // 2. Horizon Fog (Misty Forest Valley Fog)
-    scene.fog = new THREE.FogExp2(0x324436, 0.004);
+    scene.fog = new THREE.FogExp2(0x324436, 0.0038);
 
     // 3. Rich Sunlight & Dynamic Shadows
-    this.sunLight = new THREE.DirectionalLight(0xfffaea, 2.6);
+    this.sunLight = new THREE.DirectionalLight(0xfffaea, 3.0);
     this.sunLight.position.copy(this.sunPosition).multiplyScalar(150);
     this.sunLight.castShadow = true;
     this.sunLight.shadow.mapSize.width = 2048;
@@ -48,8 +48,23 @@ export class Atmosphere {
     scene.add(this.sunLight);
 
     // 4. Ambient Fill Light (Blue mountain sky above, forest pine moss below)
-    this.hemiLight = new THREE.HemisphereLight(0xe8f0ea, 0x22361e, 1.25);
+    this.hemiLight = new THREE.HemisphereLight(0xe8f0ea, 0x22361e, 1.35);
     scene.add(this.hemiLight);
+
+    // 5. Image-Based Lighting (IBL) Environment Map for Metallic & Glass Reflections
+    if (renderer) {
+      try {
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        pmrem.compileEquirectangularShader();
+        const skyScene = new THREE.Scene();
+        skyScene.add(this.sky.clone());
+        const envTexture = pmrem.fromScene(skyScene).texture;
+        scene.environment = envTexture;
+        pmrem.dispose();
+      } catch (err) {
+        console.warn('IBL generation fallback:', err);
+      }
+    }
   }
 
   public updateLightTarget(targetPos: THREE.Vector3) {
