@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 export interface GasStationLocation {
   pos: THREE.Vector3;
@@ -336,6 +337,9 @@ export class ForestStageMap {
     trunkMesh.receiveShadow = true;
 
     const dummy = new THREE.Object3D();
+    const realDummy = new THREE.Object3D();
+    const realMatrices: THREE.Matrix4[] = [];
+
     let placed = 0;
     let attempts = 0;
 
@@ -354,25 +358,34 @@ export class ForestStageMap {
       const groundY = this.getTerrainHeight(x, z);
       if (groundY > 24) continue;
 
-      const scale = 0.8 + Math.random() * 0.55;
+      const baseScale = 0.8 + Math.random() * 0.55;
+      const rotY = Math.random() * Math.PI * 2;
 
-      // Both Trunk & Foliage share EXACT SAME position, scale, and rotation!
-      dummy.position.set(x, groundY - 0.5 * scale, z); // Anchor 0.5m into ground
-      dummy.scale.set(scale, scale, scale);
-      dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
+      // 1. Procedural placeholder tree matrix
+      dummy.position.set(x, groundY - 0.5 * baseScale, z);
+      dummy.scale.set(baseScale, baseScale, baseScale);
+      dummy.rotation.set(0, rotY, 0);
       dummy.updateMatrix();
 
       trunkMesh.setMatrixAt(placed, dummy.matrix);
       foliageMesh.setMatrixAt(placed, dummy.matrix);
 
+      // 2. Photorealistic GLTF tree matrix (scaled from ~3.5m base model to 10-14m mature pine)
+      const gltfScale = baseScale * 3.0;
+      realDummy.position.set(x, groundY - 0.15, z);
+      realDummy.scale.set(gltfScale, gltfScale, gltfScale);
+      realDummy.rotation.set(0, rotY, 0);
+      realDummy.updateMatrix();
+      realMatrices.push(realDummy.matrix.clone());
+
       // Physics tree collider
       const bodyDesc = this.rapier.RigidBodyDesc.fixed().setTranslation(
         x,
-        groundY + 3.0 * scale,
+        groundY + 3.0 * baseScale,
         z
       );
       const body = this.world.createRigidBody(bodyDesc);
-      const col = this.rapier.ColliderDesc.cylinder(3.5 * scale, 0.45 * scale);
+      const col = this.rapier.ColliderDesc.cylinder(3.5 * baseScale, 0.45 * baseScale);
       this.world.createCollider(col, body);
 
       placed++;
@@ -381,6 +394,75 @@ export class ForestStageMap {
     foliageMesh.instanceMatrix.needsUpdate = true;
     trunkMesh.instanceMatrix.needsUpdate = true;
     this.mesh.add(trunkMesh, foliageMesh);
+
+    // Asynchronously load and instantiate photorealistic 3D scanned Pine Trees
+    const loader = new GLTFLoader();
+    loader.load(
+      '/assets/models/pine_tree.glb',
+      (gltf) => {
+        gltf.scene.updateMatrixWorld(true);
+        let realTrunkGeo: THREE.BufferGeometry | null = null;
+        let realTrunkMat: THREE.Material | null = null;
+        let realFoliageGeo: THREE.BufferGeometry | null = null;
+        let realFoliageMat: THREE.Material | null = null;
+
+        gltf.scene.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            const name = mesh.name.toLowerCase();
+            const bakedGeo = mesh.geometry.clone();
+            bakedGeo.applyMatrix4(mesh.matrixWorld);
+
+            if (name.includes('tree_0') || name.includes('trunk')) {
+              realTrunkGeo = bakedGeo;
+              realTrunkMat = mesh.material as THREE.Material;
+            } else if (name.includes('tree_1') || name.includes('foliage') || name.includes('mat')) {
+              realFoliageGeo = bakedGeo;
+              realFoliageMat = mesh.material as THREE.Material;
+            }
+          }
+        });
+
+        if (realTrunkGeo && realFoliageGeo && realTrunkMat && realFoliageMat) {
+          // Remove procedural placeholder trees
+          this.mesh.remove(trunkMesh, foliageMesh);
+          trunkMesh.geometry.dispose();
+          foliageMesh.geometry.dispose();
+
+          // Enhance materials for PBR rendering
+          const folMatStd = realFoliageMat as THREE.MeshStandardMaterial;
+          folMatStd.alphaTest = 0.22;
+          folMatStd.transparent = false;
+          folMatStd.depthWrite = true;
+          folMatStd.side = THREE.DoubleSide;
+          folMatStd.roughness = 0.85;
+
+          const trkMatStd = realTrunkMat as THREE.MeshStandardMaterial;
+          trkMatStd.roughness = 0.95;
+
+          const realTrunkInstanced = new THREE.InstancedMesh(realTrunkGeo, realTrunkMat, realMatrices.length);
+          const realFoliageInstanced = new THREE.InstancedMesh(realFoliageGeo, realFoliageMat, realMatrices.length);
+          realTrunkInstanced.castShadow = true;
+          realTrunkInstanced.receiveShadow = true;
+          realFoliageInstanced.castShadow = true;
+          realFoliageInstanced.receiveShadow = true;
+
+          for (let i = 0; i < realMatrices.length; i++) {
+            realTrunkInstanced.setMatrixAt(i, realMatrices[i]);
+            realFoliageInstanced.setMatrixAt(i, realMatrices[i]);
+          }
+
+          realTrunkInstanced.instanceMatrix.needsUpdate = true;
+          realFoliageInstanced.instanceMatrix.needsUpdate = true;
+          this.mesh.add(realTrunkInstanced, realFoliageInstanced);
+          console.log(`[ForestStageMap] Populated ${realMatrices.length} photorealistic 3D scanned Pine Trees.`);
+        }
+      },
+      undefined,
+      (err) => {
+        console.warn('[ForestStageMap] Error loading pine_tree.glb, keeping high-poly procedural trees:', err);
+      }
+    );
   }
 
   /**

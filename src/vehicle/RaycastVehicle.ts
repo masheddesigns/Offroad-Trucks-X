@@ -77,61 +77,86 @@ export class RaycastVehicle {
     // Center of mass offset: keep it low for heavy bottom-weighted Dakar ladder frame
     this.chassisCollider.setMassProperties(
       7500.0, // 7.5 metric tons
-      { x: 0, y: -0.65, z: 0 },
-      { x: 24000, y: 26000, z: 16000 }, // True physical moment of inertia
+      { x: 0, y: -0.65, z: -0.15 },
+      { x: 26000, y: 28000, z: 18000 }, // True physical moment of inertia
       { x: 0, y: 0, z: 0, w: 1 }
     );
     // CRITICAL: Rapier requires explicit recompute on the rigid body!
     this.chassisBody.recomputeMassPropertiesFromColliders();
 
-    // 3. Define 4 Wheels (Validating 4-wheel physics first)
-    const trackWidth = 1.35;
-    const wheelbase = 1.95;
-    const wheelRadius = 0.62;
-    const restLen = 0.85;
+    // 3. Define 6-Wheel Dakar All-Terrain Configuration
+    const trackWidth = 1.28;
+    const wheelRadius = 0.58;
+    const restLen = 0.76;
+    const mountY = -0.25;
+
+    // Per-wheel spring rate: ~42,000 N/m. At rest compression = (7500*9.81/6)/42000 = ~0.29m
+    // Critical damping for 1250 kg per corner: cc = 2 * sqrt(42000 * 1250) = 14,490 Ns/m
+    // Tuned damping = 10,800 Ns/m (damping ratio ~0.74, smooth Dakar bump absorption with zero bounce)
+    const kSpring = 42000;
+    const kDamp = 10800;
 
     const wheelConfigs: WheelConfig[] = [
-      // Front Left
+      // Axle 1: Front Steering & Drive
       {
-        localMountPoint: new THREE.Vector3(-trackWidth, -0.2, wheelbase),
+        localMountPoint: new THREE.Vector3(-trackWidth, mountY, 2.40),
         radius: wheelRadius,
         suspensionRestLength: restLen,
-        suspensionStiffness: 56000,
-        suspensionDamping: 13500, // Critical damping tuned to prevent bouncing
-        maxTravel: 0.55,
+        suspensionStiffness: kSpring,
+        suspensionDamping: kDamp,
+        maxTravel: 0.50,
         isFront: true,
         isDrive: true
       },
-      // Front Right
       {
-        localMountPoint: new THREE.Vector3(trackWidth, -0.2, wheelbase),
+        localMountPoint: new THREE.Vector3(trackWidth, mountY, 2.40),
         radius: wheelRadius,
         suspensionRestLength: restLen,
-        suspensionStiffness: 56000,
-        suspensionDamping: 13500,
-        maxTravel: 0.55,
+        suspensionStiffness: kSpring,
+        suspensionDamping: kDamp,
+        maxTravel: 0.50,
         isFront: true,
         isDrive: true
       },
-      // Rear Left
+      // Axle 2: Mid Tandem Drive
       {
-        localMountPoint: new THREE.Vector3(-trackWidth, -0.2, -wheelbase),
+        localMountPoint: new THREE.Vector3(-trackWidth, mountY, -1.35),
         radius: wheelRadius,
         suspensionRestLength: restLen,
-        suspensionStiffness: 62000,
-        suspensionDamping: 14500,
-        maxTravel: 0.55,
+        suspensionStiffness: kSpring + 3000,
+        suspensionDamping: kDamp + 800,
+        maxTravel: 0.50,
         isFront: false,
         isDrive: true
       },
-      // Rear Right
       {
-        localMountPoint: new THREE.Vector3(trackWidth, -0.2, -wheelbase),
+        localMountPoint: new THREE.Vector3(trackWidth, mountY, -1.35),
         radius: wheelRadius,
         suspensionRestLength: restLen,
-        suspensionStiffness: 62000,
-        suspensionDamping: 14500,
-        maxTravel: 0.55,
+        suspensionStiffness: kSpring + 3000,
+        suspensionDamping: kDamp + 800,
+        maxTravel: 0.50,
+        isFront: false,
+        isDrive: true
+      },
+      // Axle 3: Rear Tandem Drive
+      {
+        localMountPoint: new THREE.Vector3(-trackWidth, mountY, -2.66),
+        radius: wheelRadius,
+        suspensionRestLength: restLen,
+        suspensionStiffness: kSpring + 3000,
+        suspensionDamping: kDamp + 800,
+        maxTravel: 0.50,
+        isFront: false,
+        isDrive: true
+      },
+      {
+        localMountPoint: new THREE.Vector3(trackWidth, mountY, -2.66),
+        radius: wheelRadius,
+        suspensionRestLength: restLen,
+        suspensionStiffness: kSpring + 3000,
+        suspensionDamping: kDamp + 800,
+        maxTravel: 0.50,
         isFront: false,
         isDrive: true
       }
@@ -232,11 +257,18 @@ export class RaycastVehicle {
         const rContact = hardpointWorld.clone().sub(chassisPos);
         const pointVel = linearVelocity.clone().add(angularVelocity.clone().cross(rContact));
 
-        // Suspension Velocity (damping calculation)
-        const suspVel = pointVel.dot(rayDir);
-        const springForceMag = Math.max(
-          0,
-          cfg.suspensionStiffness * wheel.compression - cfg.suspensionDamping * suspVel
+        // Suspension vertical velocity along chassis up vector
+        // Positive when expanding/rebounding upward, negative when compressing downward
+        const vUpVel = pointVel.dot(vUp);
+
+        // Correct physics spring + damper force:
+        // - Spring pushes upward proportional to compression: k * x
+        // - Damper opposes vertical velocity: - c * vUpVel
+        //   When compressing (vUpVel < 0): -c * vUpVel is POSITIVE, resisting compression
+        //   When rebounding (vUpVel > 0): -c * vUpVel is NEGATIVE, resisting rebound and killing bounce
+        const springForceMag = Math.min(
+          75000,
+          Math.max(0, cfg.suspensionStiffness * wheel.compression - cfg.suspensionDamping * vUpVel)
         );
 
         // Apply upward spring impulse
@@ -351,25 +383,35 @@ export class RaycastVehicle {
       }
     }
 
-    // Anti-Roll Bar simulation along local chassis up vector (Front & Rear Axles)
-    this.applyAntiRollBar(this.wheels[0], this.wheels[1], dt, vUp);
-    this.applyAntiRollBar(this.wheels[2], this.wheels[3], dt, vUp);
+    // Anti-Roll Bar simulation along local chassis up vector (Front, Mid, Rear Axles)
+    if (this.wheels.length >= 6) {
+      this.applyAntiRollBar(this.wheels[0], this.wheels[1], dt, vUp);
+      this.applyAntiRollBar(this.wheels[2], this.wheels[3], dt, vUp);
+      this.applyAntiRollBar(this.wheels[4], this.wheels[5], dt, vUp);
+    } else {
+      this.applyAntiRollBar(this.wheels[0], this.wheels[1], dt, vUp);
+      this.applyAntiRollBar(this.wheels[2], this.wheels[3], dt, vUp);
+    }
 
-    // Active Upright Roll Stabilization Assist (Prevents Flipping / Rollover)
+    // Active Upright Roll Stabilization Assist: Damp extreme roll when leaning dangerously (> 26 deg / 0.45 rad)
     const worldUp = new THREE.Vector3(0, 1, 0);
     const tiltAngle = vUp.angleTo(worldUp);
-    if (tiltAngle > 0.15) { // If tilted more than ~8 degrees
+    if (tiltAngle > 0.45) {
       const correctionAxis = new THREE.Vector3().crossVectors(vUp, worldUp).normalize();
-      const torqueMag = Math.min(tiltAngle * 140000.0, 320000.0);
-      const torque = correctionAxis.multiplyScalar(torqueMag * dt);
+      const angVel = this.chassisBody.angvel();
+      const rollDampTorque = new THREE.Vector3(angVel.x, angVel.y, angVel.z).multiplyScalar(-18000.0 * dt);
+      this.chassisBody.applyTorqueImpulse({ x: rollDampTorque.x, y: rollDampTorque.y, z: rollDampTorque.z }, true);
+
+      const rightingMag = Math.min((tiltAngle - 0.45) * 90000.0, 180000.0);
+      const torque = correctionAxis.multiplyScalar(rightingMag * dt);
       this.chassisBody.applyTorqueImpulse({ x: torque.x, y: torque.y, z: torque.z }, true);
     }
 
     // Auto-Recovery: If upside down or on side for more than 1 second, smoothly self-right
-    if (tiltAngle > 1.2) { // Tilted past ~70 degrees (on side or roof)
+    if (tiltAngle > 1.15) { // Tilted past ~66 degrees (on side or roof)
       const angVel = this.chassisBody.angvel();
-      this.chassisBody.setAngvel({ x: angVel.x * 0.9, y: angVel.y * 0.9, z: angVel.z * 0.9 }, true);
-      const rightingImpulse = new THREE.Vector3(0, 18000.0 * dt, 0);
+      this.chassisBody.setAngvel({ x: angVel.x * 0.85, y: angVel.y * 0.85, z: angVel.z * 0.85 }, true);
+      const rightingImpulse = new THREE.Vector3(0, 22000.0 * dt, 0);
       this.chassisBody.applyImpulse({ x: rightingImpulse.x, y: rightingImpulse.y, z: rightingImpulse.z }, true);
     }
 
@@ -390,9 +432,10 @@ export class RaycastVehicle {
   private applyAntiRollBar(wheelL: WheelState, wheelR: WheelState, dt: number, vUp: THREE.Vector3) {
     const travelDiff = wheelL.compression - wheelR.compression;
     if (Math.abs(travelDiff) > 0.001) {
-      const antiRollForce = travelDiff * this.antiRollStiffness;
-      const impulseL = vUp.clone().multiplyScalar(-antiRollForce * dt);
-      const impulseR = vUp.clone().multiplyScalar(antiRollForce * dt);
+      // Level chassis: push heavily compressed wheel up (+vUp), pull extended wheel down (-vUp)
+      const antiRollForce = Math.min(25000, Math.max(-25000, travelDiff * this.antiRollStiffness));
+      const impulseL = vUp.clone().multiplyScalar(antiRollForce * dt);
+      const impulseR = vUp.clone().multiplyScalar(-antiRollForce * dt);
 
       this.chassisBody.applyImpulseAtPoint(
         { x: impulseL.x, y: impulseL.y, z: impulseL.z },

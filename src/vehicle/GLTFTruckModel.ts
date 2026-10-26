@@ -6,7 +6,7 @@ interface AxleNode {
   node: THREE.Object3D;
   initialPos: THREE.Vector3;
   initialQuat: THREE.Quaternion;
-  isFront: boolean;
+  axleType: 'front' | 'mid' | 'rear';
 }
 
 export class GLTFTruckModel {
@@ -14,6 +14,7 @@ export class GLTFTruckModel {
   public isLoaded: boolean = false;
   public chassisMesh: THREE.Object3D | null = null;
   public axles: AxleNode[] = [];
+  public bulbMaterial: THREE.MeshStandardMaterial | null = null;
 
   constructor() {
     this.group = new THREE.Group();
@@ -26,7 +27,7 @@ export class GLTFTruckModel {
       const gltf = await loader.loadAsync(path);
       const root = gltf.scene;
 
-      // Enable shadows and PBR reflections
+      // Enable shadows and enhance PBR materials
       root.traverse((node) => {
         if ((node as THREE.Mesh).isMesh) {
           const mesh = node as THREE.Mesh;
@@ -34,8 +35,13 @@ export class GLTFTruckModel {
           mesh.receiveShadow = true;
           if (mesh.material) {
             const mat = mesh.material as THREE.MeshStandardMaterial;
-            mat.roughness = Math.min(mat.roughness, 0.65);
-            mat.envMapIntensity = 1.2;
+            mat.roughness = Math.min(mat.roughness, 0.7);
+            mat.envMapIntensity = 1.35;
+            if (mat.name === 'CougarBulbs') {
+              this.bulbMaterial = mat;
+              mat.emissive = new THREE.Color(0xffbb77);
+              mat.emissiveIntensity = 1.2;
+            }
             mat.needsUpdate = true;
           }
         }
@@ -47,19 +53,22 @@ export class GLTFTruckModel {
       // Locate Axles: 'Wheels' (front), 'Wheels_mid', 'Wheels_rear'
       root.traverse((child) => {
         const name = child.name.toLowerCase();
-        if (name.includes('wheels') || name.includes('wheel') || name.includes('tire')) {
-          const isFront = name === 'wheels' || name.includes('front');
+        if (name === 'wheels' || name === 'wheels_mid' || name === 'wheels_rear') {
+          let axleType: 'front' | 'mid' | 'rear' = 'front';
+          if (name.includes('mid')) axleType = 'mid';
+          else if (name.includes('rear')) axleType = 'rear';
+
           this.axles.push({
             node: child,
             initialPos: child.position.clone(),
             initialQuat: child.quaternion.clone(),
-            isFront
+            axleType
           });
         }
       });
 
       this.isLoaded = true;
-      console.log(`[GLTFTruckModel] Loaded 6x6 Heavy Truck Model (${path}) with ${this.axles.length} animated axle assemblies.`);
+      console.log(`[GLTFTruckModel] Loaded 6x6 Heavy Dakar Truck (${path}) with ${this.axles.length} animated axle assemblies.`);
       return true;
     } catch (err) {
       console.warn(`[GLTFTruckModel] Model loading error for ${path}:`, err);
@@ -71,37 +80,79 @@ export class GLTFTruckModel {
     if (!this.isLoaded || !this.chassisMesh) return;
 
     // 1. Sync Chassis Body Position & Rotation with Physics
-    // Apply local offset rotated by chassis orientation so the model pivots around the true center of mass
+    // Offset accounts for 6x6 axle symmetry and chassis center of mass
     const trans = vehicle.chassisBody.translation();
     const rot = vehicle.chassisBody.rotation();
     const chassisQuat = new THREE.Quaternion(rot.x, rot.y, rot.z, rot.w);
-    const localOffset = new THREE.Vector3(0, -1.48, 0.22).applyQuaternion(chassisQuat);
+    const localOffset = new THREE.Vector3(-0.062, -1.32, 0.0).applyQuaternion(chassisQuat);
     this.chassisMesh.position.set(trans.x + localOffset.x, trans.y + localOffset.y, trans.z + localOffset.z);
     this.chassisMesh.quaternion.copy(chassisQuat);
 
-    // 2. Animate Axles (Steering, Wheel Spin, Suspension Compression)
-    const frontAvgSpin = (vehicle.wheels[0].rotationAngle + vehicle.wheels[1].rotationAngle) * 0.5;
-    const rearAvgSpin = (vehicle.wheels[2].rotationAngle + vehicle.wheels[3].rotationAngle) * 0.5;
+    // 2. Headlight / Brakelight glow response
+    if (this.bulbMaterial) {
+      if (isBraking) {
+        this.bulbMaterial.emissive.setHex(0xff2211);
+        this.bulbMaterial.emissiveIntensity = 3.5;
+      } else {
+        this.bulbMaterial.emissive.setHex(0xffeedd);
+        this.bulbMaterial.emissiveIntensity = 1.4;
+      }
+    }
 
-    const frontSuspCompression = (vehicle.wheels[0].compression + vehicle.wheels[1].compression) * 0.5;
-    const rearSuspCompression = (vehicle.wheels[2].compression + vehicle.wheels[3].compression) * 0.5;
+    // 3. Animate Axles (Steering, Wheel Spin, Suspension Compression)
+    // 6-wheel layout: [0, 1] Front, [2, 3] Mid, [4, 5] Rear
+    const has6Wheels = vehicle.wheels.length >= 6;
+
+    const frontAvgSpin = has6Wheels
+      ? (vehicle.wheels[0].rotationAngle + vehicle.wheels[1].rotationAngle) * 0.5
+      : (vehicle.wheels[0].rotationAngle + vehicle.wheels[1].rotationAngle) * 0.5;
+
+    const midAvgSpin = has6Wheels
+      ? (vehicle.wheels[2].rotationAngle + vehicle.wheels[3].rotationAngle) * 0.5
+      : (vehicle.wheels[2].rotationAngle + vehicle.wheels[3].rotationAngle) * 0.5;
+
+    const rearAvgSpin = has6Wheels
+      ? (vehicle.wheels[4].rotationAngle + vehicle.wheels[5].rotationAngle) * 0.5
+      : (vehicle.wheels[2].rotationAngle + vehicle.wheels[3].rotationAngle) * 0.5;
+
+    const frontCompression = has6Wheels
+      ? (vehicle.wheels[0].compression + vehicle.wheels[1].compression) * 0.5
+      : (vehicle.wheels[0].compression + vehicle.wheels[1].compression) * 0.5;
+
+    const midCompression = has6Wheels
+      ? (vehicle.wheels[2].compression + vehicle.wheels[3].compression) * 0.5
+      : (vehicle.wheels[2].compression + vehicle.wheels[3].compression) * 0.5;
+
+    const rearCompression = has6Wheels
+      ? (vehicle.wheels[4].compression + vehicle.wheels[5].compression) * 0.5
+      : (vehicle.wheels[2].compression + vehicle.wheels[3].compression) * 0.5;
 
     for (const axle of this.axles) {
-      // Suspension bounce along local Y
-      const suspDelta = axle.isFront ? frontSuspCompression * 0.7 : rearSuspCompression * 0.7;
+      let spinAngle = frontAvgSpin;
+      let suspCompression = frontCompression;
+
+      if (axle.axleType === 'mid') {
+        spinAngle = midAvgSpin;
+        suspCompression = midCompression;
+      } else if (axle.axleType === 'rear') {
+        spinAngle = rearAvgSpin;
+        suspCompression = rearCompression;
+      }
+
+      // Suspension bounce along local Y of the chassis
+      const suspDelta = suspCompression * 0.75;
       axle.node.position.y = axle.initialPos.y + suspDelta;
 
-      // Wheel Spin & Steering Rotations
-      const spinAngle = axle.isFront ? frontAvgSpin : rearAvgSpin;
+      // Wheel Spin around local X axis
       const spinQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), spinAngle);
 
-      if (axle.isFront) {
-        // Front Axle Steers and Spins (Level with ground)
+      if (axle.axleType === 'front') {
+        // Front Axle Steers around Y axis and spins around X axis
         const steerQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), vehicle.currentSteer);
-        axle.node.quaternion.copy(steerQuat).multiply(spinQuat);
+        axle.node.quaternion.copy(steerQuat).multiply(spinQuat).multiply(axle.initialQuat);
       } else {
-        // Rear Tandem Axles Spin
-        axle.node.quaternion.copy(spinQuat);
+        // Rear Tandem Axles Spin around X axis
+        axle.node.quaternion.copy(spinQuat).multiply(axle.initialQuat);
       }
     }
   }
