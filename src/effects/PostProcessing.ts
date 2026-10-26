@@ -9,10 +9,10 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 const ColorGradeShader = {
   uniforms: {
     tDiffuse: { value: null },
-    contrast: { value: 1.15 },
-    saturation: { value: 1.12 },
-    vignetteDarkness: { value: 0.8 },
-    vignetteOffset: { value: 1.05 }
+    contrast: { value: 1.04 },
+    saturation: { value: 1.02 },
+    vignetteDarkness: { value: 0.45 },
+    vignetteOffset: { value: 1.1 }
   },
   vertexShader: `
     varying vec2 vUv;
@@ -32,14 +32,14 @@ const ColorGradeShader = {
     void main() {
       vec4 color = texture2D(tDiffuse, vUv);
 
-      // Contrast
+      // Subtle contrast
       color.rgb = (color.rgb - 0.5) * contrast + 0.5;
 
-      // Saturation
+      // Natural saturation
       float luma = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
       color.rgb = mix(vec3(luma), color.rgb, saturation);
 
-      // Lens Vignette
+      // Soft natural lens vignette
       vec2 uv = (vUv - 0.5) * vec2(vignetteOffset);
       float dist = dot(uv, uv);
       color.rgb *= clamp(1.0 - dist * vignetteDarkness, 0.0, 1.0);
@@ -64,9 +64,9 @@ export class PostProcessingManager {
     const renderPass = new RenderPass(scene, camera);
     this.composer.addPass(renderPass);
 
-    // 2. High-Performance Unreal Bloom Pass
+    // 2. Controlled Bloom (Only bright emissive lights glow, NOT the sky/ground!)
     const res = new THREE.Vector2(width, height);
-    this.bloomPass = new UnrealBloomPass(res, 0.45, 0.35, 0.82);
+    this.bloomPass = new UnrealBloomPass(res, 0.35, 0.25, 1.35);
     this.composer.addPass(this.bloomPass);
 
     // 3. Cinematic Color Grading & Vignette Pass

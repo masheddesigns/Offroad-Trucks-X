@@ -27,28 +27,29 @@ export class Atmosphere {
     this.sunPosition.setFromSphericalCoords(1, phi, theta);
     skyUniforms['sunPosition'].value.copy(this.sunPosition);
 
-    // 2. Horizon Fog (Misty Forest Valley Fog)
-    scene.fog = new THREE.FogExp2(0x324436, 0.0038);
+    // 2. Horizon Fog (Crisp Alpine Forest Horizon Mist - Matches Sky Tone)
+    scene.fog = new THREE.FogExp2(0xa6b8c7, 0.0028);
 
     // 3. Rich Sunlight & Dynamic Shadows
-    this.sunLight = new THREE.DirectionalLight(0xfffaea, 3.0);
+    this.sunLight = new THREE.DirectionalLight(0xfff7e8, 3.2);
     this.sunLight.position.copy(this.sunPosition).multiplyScalar(150);
     this.sunLight.castShadow = true;
     this.sunLight.shadow.mapSize.width = 2048;
     this.sunLight.shadow.mapSize.height = 2048;
     this.sunLight.shadow.camera.near = 10;
-    this.sunLight.shadow.camera.far = 350;
+    this.sunLight.shadow.camera.far = 320;
 
-    const d = 65;
+    const d = 55;
     this.sunLight.shadow.camera.left = -d;
     this.sunLight.shadow.camera.right = d;
     this.sunLight.shadow.camera.top = d;
     this.sunLight.shadow.camera.bottom = -d;
-    this.sunLight.shadow.bias = -0.0004;
+    this.sunLight.shadow.bias = -0.0002;
+    this.sunLight.shadow.normalBias = 0.025;
     scene.add(this.sunLight);
 
-    // 4. Ambient Fill Light (Blue mountain sky above, forest pine moss below)
-    this.hemiLight = new THREE.HemisphereLight(0xe8f0ea, 0x22361e, 1.35);
+    // 4. Ambient Fill Light (Blue alpine sky above, warm earthy loam bounce below)
+    this.hemiLight = new THREE.HemisphereLight(0xdce7f0, 0x241d17, 1.25);
     scene.add(this.hemiLight);
 
     // 5. Image-Based Lighting (IBL) Environment Map for Metallic & Glass Reflections

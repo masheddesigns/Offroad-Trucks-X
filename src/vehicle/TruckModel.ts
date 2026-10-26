@@ -13,6 +13,14 @@ export class TruckModel {
   public headlights: THREE.SpotLight[] = [];
   public brakeLightMaterial!: THREE.MeshStandardMaterial;
   public headlightGlowMaterial!: THREE.MeshStandardMaterial;
+  public roofLightMaterial!: THREE.MeshStandardMaterial;
+
+  // Exhaust stack emission points (local space)
+  public leftExhaustTipLocal = new THREE.Vector3(-1.08, 2.6, 0.12);
+  public rightExhaustTipLocal = new THREE.Vector3(1.08, 2.6, 0.12);
+
+  // Soft ambient occlusion contact shadow plane under vehicle
+  private shadowPlane!: THREE.Mesh;
 
   constructor() {
     this.group = new THREE.Group();
@@ -22,45 +30,47 @@ export class TruckModel {
     this.buildDetailedDakarChassis();
     this.buildWheelAssemblies();
     this.setupVehicleLights();
+    this.buildContactShadow();
   }
 
   private buildDetailedDakarChassis() {
-    // Premium Materials
+    // Premium Automotive & Off-Road Materials
     const darkCabMat = new THREE.MeshStandardMaterial({
-      color: 0x1f2329,
-      roughness: 0.35,
-      metalness: 0.7
+      color: 0x1d2128,
+      roughness: 0.32,
+      metalness: 0.72
     });
 
     const dakarOrangeMat = new THREE.MeshStandardMaterial({
       color: 0xff5e00, // Dakar Factory Racing Orange
-      roughness: 0.3,
+      roughness: 0.28,
       metalness: 0.55
     });
 
     const chassisSteelMat = new THREE.MeshStandardMaterial({
-      color: 0x121316,
-      roughness: 0.7,
+      color: 0x141518,
+      roughness: 0.75,
       metalness: 0.8
     });
 
     const chromeMat = new THREE.MeshStandardMaterial({
-      color: 0xe0e0e0,
-      roughness: 0.15,
-      metalness: 0.95
+      color: 0xe5e7eb,
+      roughness: 0.12,
+      metalness: 0.96
     });
 
     const glassMat = new THREE.MeshPhysicalMaterial({
-      color: 0x0a141d,
-      transmission: 0.7,
+      color: 0x09131a,
+      transmission: 0.75,
       opacity: 0.9,
       transparent: true,
-      roughness: 0.1,
-      metalness: 0.1
+      roughness: 0.08,
+      metalness: 0.12,
+      ior: 1.5
     });
 
     const radiatorGrilleMat = new THREE.MeshStandardMaterial({
-      color: 0x0a0b0d,
+      color: 0x0b0c0e,
       roughness: 0.9,
       metalness: 0.3
     });
@@ -133,7 +143,7 @@ export class TruckModel {
     winR.position.x = 1.23;
     this.chassisMesh.add(winL, winR);
 
-    // Rally Driver Silhouette Inside Cab
+    // Driver & Co-Driver Helmets Inside Cab
     const helmetGeo = new THREE.SphereGeometry(0.2, 12, 12);
     const helmetMat = new THREE.MeshStandardMaterial({ color: 0xff3300 });
     const driverHelmet = new THREE.Mesh(helmetGeo, helmetMat);
@@ -174,7 +184,19 @@ export class TruckModel {
     const braceR = braceL.clone();
     braceR.position.x = 0.85;
 
-    // Skid Plate with ventilation slots
+    // Front Bumper Heavy Winch
+    const winchDrumGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.45, 12);
+    const winchDrum = new THREE.Mesh(winchDrumGeo, chromeMat);
+    winchDrum.rotation.z = Math.PI / 2;
+    winchDrum.position.set(0, 0.22, 3.38);
+
+    const winchHookGeo = new THREE.BoxGeometry(0.08, 0.15, 0.08);
+    const winchHookMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3 });
+    const winchHook = new THREE.Mesh(winchHookGeo, winchHookMat);
+    winchHook.position.set(0, 0.22, 3.48);
+    bullBarGroup.add(winchDrum, winchHook);
+
+    // Skid Plate
     const skidGeo = new THREE.BoxGeometry(1.85, 0.95, 0.08);
     const skid = new THREE.Mesh(skidGeo, chromeMat);
     skid.position.set(0, -0.22, 3.15);
@@ -185,7 +207,7 @@ export class TruckModel {
     const fogLensMat = new THREE.MeshStandardMaterial({
       color: 0xffaa00,
       emissive: 0xff8800,
-      emissiveIntensity: 3.0
+      emissiveIntensity: 3.5
     });
     for (let f = -1.5; f <= 1.5; f += 1.0) {
       const lampGeo = new THREE.CylinderGeometry(0.13, 0.13, 0.1, 16);
@@ -196,7 +218,22 @@ export class TruckModel {
     }
     this.chassisMesh.add(bullBarGroup);
 
-    // 4. Dual Chrome Exhaust Stacks
+    // 4. Roof-Mounted LED Light Bar
+    this.roofLightMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      emissive: 0xffffff,
+      emissiveIntensity: 3.8
+    });
+    const lightBarGeo = new THREE.BoxGeometry(1.8, 0.12, 0.16);
+    const lightBarHousing = new THREE.Mesh(lightBarGeo, chassisSteelMat);
+    lightBarHousing.position.set(0, 1.65, 2.35);
+
+    const lightBarLensGeo = new THREE.BoxGeometry(1.7, 0.08, 0.06);
+    const lightBarLens = new THREE.Mesh(lightBarLensGeo, this.roofLightMaterial);
+    lightBarLens.position.set(0, 1.65, 2.44);
+    this.chassisMesh.add(lightBarHousing, lightBarLens);
+
+    // 5. Dual Chrome Exhaust Stacks
     const pipeGeo = new THREE.CylinderGeometry(0.09, 0.09, 2.1, 16);
     const stackL = new THREE.Mesh(pipeGeo, chromeMat);
     stackL.position.set(-1.08, 1.45, 0.22);
@@ -206,13 +243,13 @@ export class TruckModel {
     // Curved exhaust tips
     const tipGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.4, 16);
     const tipL = new THREE.Mesh(tipGeo, chromeMat);
-    tipL.position.set(-1.08, 2.55, 0.12);
+    tipL.position.copy(this.leftExhaustTipLocal);
     tipL.rotation.x = -0.4;
     const tipR = tipL.clone();
-    tipR.position.x = 1.08;
+    tipR.position.copy(this.rightExhaustTipLocal);
     this.chassisMesh.add(stackL, stackR, tipL, tipR);
 
-    // 5. Rear Service Body & Equipment Bay
+    // 6. Rear Service Body & Equipment Bay
     const serviceBodyGeo = new THREE.BoxGeometry(2.42, 1.55, 3.7);
     const serviceBody = new THREE.Mesh(serviceBodyGeo, darkCabMat);
     serviceBody.position.set(0, 0.72, -1.55);
@@ -225,6 +262,10 @@ export class TruckModel {
     rearStripe.position.set(0, 0.65, -1.55);
     this.chassisMesh.add(rearStripe);
 
+    // Procedural Livery Decal Texture (#07 DESERT TSAR DAKAR)
+    const liveryDecal = this.createLiveryDecalMesh();
+    this.chassisMesh.add(liveryDecal);
+
     // External Tubular Roll Cage on Rear Box
     const cageTubeGeo = new THREE.CylinderGeometry(0.045, 0.045, 3.65, 8);
     const cageTopL = new THREE.Mesh(cageTubeGeo, dakarOrangeMat);
@@ -234,9 +275,8 @@ export class TruckModel {
     cageTopR.position.x = 1.23;
     this.chassisMesh.add(cageTopL, cageTopR);
 
-    // 6. Rear Mounted Equipment (Spare Tires, Jerrycans, Sand Ladders)
-    // Dual Dakar Spare Wheels in Rear Niche
-    const spareTireGeo = new THREE.CylinderGeometry(0.62, 0.62, 0.42, 20);
+    // 7. Rear Mounted Equipment (Spare Tires, Jerrycans, Sand Ladders)
+    const spareTireGeo = new THREE.CylinderGeometry(0.62, 0.62, 0.42, 22);
     const spareTireMat = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.9 });
     const spare1 = new THREE.Mesh(spareTireGeo, spareTireMat);
     spare1.rotation.x = Math.PI / 2;
@@ -270,7 +310,16 @@ export class TruckModel {
     ladderR.position.x = 1.24;
     this.chassisMesh.add(ladderL, ladderR);
 
-    // 7. Functional Rear LED Brake Lights
+    // Mud Flaps Behind Rear Wheels
+    const flapGeo = new THREE.BoxGeometry(0.48, 0.45, 0.04);
+    const flapMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.95 });
+    const flapL = new THREE.Mesh(flapGeo, flapMat);
+    flapL.position.set(-1.3, -0.45, -3.45);
+    const flapR = flapL.clone();
+    flapR.position.x = 1.3;
+    this.chassisMesh.add(flapL, flapR);
+
+    // 8. Functional Rear LED Brake Lights
     this.brakeLightMaterial = new THREE.MeshStandardMaterial({
       color: 0x880000,
       emissive: 0x550000,
@@ -285,12 +334,67 @@ export class TruckModel {
     this.chassisMesh.add(brakeL, brakeR);
   }
 
+  /**
+   * Procedural Dakar Livery Decal (Race Number #07 & Sponsor)
+   */
+  private createLiveryDecalMesh(): THREE.Group {
+    const group = new THREE.Group();
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d')!;
+
+    // Background Racing Stripe
+    ctx.fillStyle = '#ff5e00';
+    ctx.fillRect(0, 0, 512, 256);
+
+    ctx.fillStyle = '#111317';
+    ctx.fillRect(20, 20, 472, 216);
+
+    // Race Number
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 90px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('#07', 150, 128);
+
+    // Text
+    ctx.font = 'bold 36px sans-serif';
+    ctx.fillStyle = '#ff5e00';
+    ctx.fillText('DESERT TSAR', 340, 100);
+
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillStyle = '#9ca3af';
+    ctx.fillText('DAKAR RALLY 6x6', 340, 150);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const decalMat = new THREE.MeshStandardMaterial({
+      map: texture,
+      roughness: 0.4,
+      metalness: 0.3
+    });
+
+    const decalGeo = new THREE.PlaneGeometry(1.6, 0.8);
+
+    // Left Door Decal
+    const decalL = new THREE.Mesh(decalGeo, decalMat);
+    decalL.position.set(-1.23, 0.72, 1.45);
+    decalL.rotation.y = -Math.PI / 2;
+
+    // Right Door Decal
+    const decalR = new THREE.Mesh(decalGeo, decalMat);
+    decalR.position.set(1.23, 0.72, 1.45);
+    decalR.rotation.y = Math.PI / 2;
+
+    group.add(decalL, decalR);
+    return group;
+  }
+
   private setupVehicleLights() {
-    // Projecting LED Headlights
     this.headlightGlowMaterial = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       emissive: 0xffeedd,
-      emissiveIntensity: 3.5
+      emissiveIntensity: 4.0
     });
 
     const lensGeo = new THREE.BoxGeometry(0.42, 0.25, 0.06);
@@ -301,14 +405,14 @@ export class TruckModel {
     this.chassisMesh.add(lensL, lensR);
 
     // Three.js Spotlights projecting beams onto terrain
-    const spotL = new THREE.SpotLight(0xfffaed, 8.0, 80, Math.PI / 5, 0.35, 1.2);
+    const spotL = new THREE.SpotLight(0xfffaed, 8.5, 85, Math.PI / 5, 0.35, 1.2);
     spotL.position.set(-0.9, 0.4, 3.35);
     const targetL = new THREE.Object3D();
     targetL.position.set(-0.9, -0.2, 35);
     this.chassisMesh.add(spotL, targetL);
     spotL.target = targetL;
 
-    const spotR = new THREE.SpotLight(0xfffaed, 8.0, 80, Math.PI / 5, 0.35, 1.2);
+    const spotR = new THREE.SpotLight(0xfffaed, 8.5, 85, Math.PI / 5, 0.35, 1.2);
     spotR.position.set(0.9, 0.4, 3.35);
     const targetR = new THREE.Object3D();
     targetR.position.set(0.9, -0.2, 35);
@@ -318,20 +422,45 @@ export class TruckModel {
     this.headlights = [spotL, spotR];
   }
 
+  /**
+   * Soft ambient occlusion contact shadow plane grounded under vehicle
+   */
+  private buildContactShadow() {
+    const shadowCanvas = document.createElement('canvas');
+    shadowCanvas.width = 128;
+    shadowCanvas.height = 128;
+    const ctx = shadowCanvas.getContext('2d')!;
+
+    const grad = ctx.createRadialGradient(64, 64, 10, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(0, 0, 0, 0.7)');
+    grad.addColorStop(0.5, 'rgba(0, 0, 0, 0.4)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 128);
+
+    const shadowTex = new THREE.CanvasTexture(shadowCanvas);
+    const shadowGeo = new THREE.PlaneGeometry(3.6, 7.5);
+    shadowGeo.rotateX(-Math.PI / 2);
+
+    const shadowMat = new THREE.MeshBasicMaterial({
+      map: shadowTex,
+      transparent: true,
+      opacity: 0.65,
+      depthWrite: false
+    });
+
+    this.shadowPlane = new THREE.Mesh(shadowGeo, shadowMat);
+    this.group.add(this.shadowPlane);
+  }
+
   private buildWheelAssemblies() {
-    // 6-Wheel Dakar Configuration:
-    // Index 0: Front Left (Physics Wheel 0)
-    // Index 1: Front Right (Physics Wheel 1)
-    // Index 2: Rear Tandem Axle 1 Left (Physics Wheel 2)
-    // Index 3: Rear Tandem Axle 1 Right (Physics Wheel 3)
-    // Index 4: Rear Tandem Axle 2 Left (Visual Tandem Synced to Physics Wheel 2)
-    // Index 5: Rear Tandem Axle 2 Right (Visual Tandem Synced to Physics Wheel 3)
+    // 6 Wheels total (2 Front, 4 Tandem Rear)
     for (let i = 0; i < 6; i++) {
       const wheel = this.createDetailedDakarWheel();
       this.wheelMeshes.push(wheel);
       this.group.add(wheel);
 
-      // Suspension spring mesh
       const spring = this.createSuspensionSpring();
       this.suspensionSprings.push(spring);
       this.group.add(spring);
@@ -341,28 +470,27 @@ export class TruckModel {
   private createDetailedDakarWheel(): THREE.Group {
     const wheel = new THREE.Group();
 
-    // Tire Material: Heavy Rubber with micro-texture
     const tireMat = new THREE.MeshStandardMaterial({
-      color: 0x131417,
-      roughness: 0.88,
-      metalness: 0.12
+      color: 0x141518,
+      roughness: 0.9,
+      metalness: 0.08
     });
 
     const rimMat = new THREE.MeshStandardMaterial({
-      color: 0x1a1c21,
-      roughness: 0.3,
+      color: 0x1c1e23,
+      roughness: 0.28,
       metalness: 0.85
     });
 
     const beadlockMat = new THREE.MeshStandardMaterial({
       color: 0xff5e00, // Dakar Orange Ring
-      roughness: 0.35,
-      metalness: 0.6
+      roughness: 0.32,
+      metalness: 0.65
     });
 
     const rotorMat = new THREE.MeshStandardMaterial({
       color: 0xaaaaaa,
-      roughness: 0.25,
+      roughness: 0.2,
       metalness: 0.95
     });
 
@@ -404,7 +532,7 @@ export class TruckModel {
     ringR.position.x = -0.268;
     wheel.add(ringL, ringR);
 
-    // 4. Visible Brake Rotor & Racing Caliper Inside Hub
+    // 4. Visible Brake Rotor & Racing Caliper
     const rotorGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.04, 16);
     const rotor = new THREE.Mesh(rotorGeo, rotorMat);
     rotor.rotation.z = Math.PI / 2;
@@ -434,12 +562,10 @@ export class TruckModel {
       roughness: 0.3
     });
 
-    // Central Damper Shaft
     const shaftGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.8, 12);
     const shaft = new THREE.Mesh(shaftGeo, chromeMat);
     springGroup.add(shaft);
 
-    // Outer Coil Spring Ring Stack
     for (let s = -0.3; s <= 0.3; s += 0.1) {
       const ringGeo = new THREE.TorusGeometry(0.09, 0.025, 8, 16);
       const ring = new THREE.Mesh(ringGeo, coilMat);
@@ -451,16 +577,20 @@ export class TruckModel {
     return springGroup;
   }
 
-  /**
-   * Updates visual truck transforms, wheel rotations, suspension springs, and brake lights
-   */
+  public getExhaustWorldPositions(): { left: THREE.Vector3; right: THREE.Vector3 } {
+    const left = this.leftExhaustTipLocal.clone().applyMatrix4(this.chassisMesh.matrixWorld);
+    const right = this.rightExhaustTipLocal.clone().applyMatrix4(this.chassisMesh.matrixWorld);
+    return { left, right };
+  }
+
   public update(vehicle: RaycastVehicle, isBrakingOrHandbraking: boolean) {
-    // 1. Sync Chassis Body Position & Rotation
+    // 1. Sync Chassis Body Position & Rotation with Physics
     const trans = vehicle.chassisBody.translation();
     const rot = vehicle.chassisBody.rotation();
 
     this.chassisMesh.position.set(trans.x, trans.y, trans.z);
     this.chassisMesh.quaternion.set(rot.x, rot.y, rot.z, rot.w);
+    this.chassisMesh.updateMatrixWorld();
 
     const chassisQuat = new THREE.Quaternion(rot.x, rot.y, rot.z, rot.w);
     const cPos = new THREE.Vector3(trans.x, trans.y, trans.z);
@@ -474,7 +604,15 @@ export class TruckModel {
       this.brakeLightMaterial.emissiveIntensity = 0.5;
     }
 
-    // 3. Sync Wheels & Dynamic Suspension Compression
+    // 3. Ground Contact Shadow Follows Vehicle
+    let lowestWheelY = trans.y;
+    for (let i = 0; i < 4; i++) {
+      lowestWheelY = Math.min(lowestWheelY, vehicle.wheels[i].worldPosition.y - 0.6);
+    }
+    this.shadowPlane.position.set(trans.x, lowestWheelY + 0.05, trans.z);
+    this.shadowPlane.quaternion.copy(chassisQuat);
+
+    // 4. Sync Wheels & Dynamic Suspension Compression
     // Wheels 0 & 1: Front Axle (Direct Physics)
     for (let i = 0; i < 2; i++) {
       const ws = vehicle.wheels[i];
@@ -482,15 +620,20 @@ export class TruckModel {
       const spring = this.suspensionSprings[i];
 
       mesh.position.copy(ws.worldPosition);
-      const spinQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), ws.rotationAngle);
+      const spinQuat = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(1, 0, 0),
+        ws.rotationAngle
+      );
       mesh.quaternion.copy(ws.worldRotation).multiply(spinQuat);
 
-      // Suspension Spring positioning between hardpoint and wheel center
       const hpWorld = ws.config.localMountPoint.clone().applyQuaternion(chassisQuat).add(cPos);
       spring.position.copy(hpWorld).add(ws.worldPosition).multiplyScalar(0.5);
       spring.quaternion.copy(chassisQuat);
 
-      const compressionScale = Math.max(0.4, 1.0 - (ws.compression / ws.config.suspensionRestLength));
+      const compressionScale = Math.max(
+        0.4,
+        1.0 - ws.compression / ws.config.suspensionRestLength
+      );
       spring.scale.set(1.0, compressionScale, 1.0);
     }
 
@@ -501,19 +644,24 @@ export class TruckModel {
       const spring = this.suspensionSprings[i];
 
       mesh.position.copy(ws.worldPosition);
-      const spinQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), ws.rotationAngle);
+      const spinQuat = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(1, 0, 0),
+        ws.rotationAngle
+      );
       mesh.quaternion.copy(ws.worldRotation).multiply(spinQuat);
 
       const hpWorld = ws.config.localMountPoint.clone().applyQuaternion(chassisQuat).add(cPos);
       spring.position.copy(hpWorld).add(ws.worldPosition).multiplyScalar(0.5);
       spring.quaternion.copy(chassisQuat);
 
-      const compressionScale = Math.max(0.4, 1.0 - (ws.compression / ws.config.suspensionRestLength));
+      const compressionScale = Math.max(
+        0.4,
+        1.0 - ws.compression / ws.config.suspensionRestLength
+      );
       spring.scale.set(1.0, compressionScale, 1.0);
     }
 
     // Wheels 4 & 5: Rear Tandem Axle 2 (Offset by -1.25m behind rear physics axle)
-    // Synchronized to rear physics wheel travel and spin
     const tandemOffsetLocal = new THREE.Vector3(0, 0, -1.25).applyQuaternion(chassisQuat);
     for (let i = 0; i < 2; i++) {
       const sourceIdx = 2 + i;
@@ -523,14 +671,24 @@ export class TruckModel {
       const spring = this.suspensionSprings[targetIdx];
 
       mesh.position.copy(ws.worldPosition).add(tandemOffsetLocal);
-      const spinQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), ws.rotationAngle);
+      const spinQuat = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(1, 0, 0),
+        ws.rotationAngle
+      );
       mesh.quaternion.copy(ws.worldRotation).multiply(spinQuat);
 
-      const hpWorld = ws.config.localMountPoint.clone().applyQuaternion(chassisQuat).add(cPos).add(tandemOffsetLocal);
+      const hpWorld = ws.config.localMountPoint
+        .clone()
+        .applyQuaternion(chassisQuat)
+        .add(cPos)
+        .add(tandemOffsetLocal);
       spring.position.copy(hpWorld).add(mesh.position).multiplyScalar(0.5);
       spring.quaternion.copy(chassisQuat);
 
-      const compressionScale = Math.max(0.4, 1.0 - (ws.compression / ws.config.suspensionRestLength));
+      const compressionScale = Math.max(
+        0.4,
+        1.0 - ws.compression / ws.config.suspensionRestLength
+      );
       spring.scale.set(1.0, compressionScale, 1.0);
     }
   }

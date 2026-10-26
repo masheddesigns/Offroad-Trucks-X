@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { PhysicsWorld } from './physics/PhysicsWorld';
 import { RaycastVehicle } from './vehicle/RaycastVehicle';
 import { TruckModel } from './vehicle/TruckModel';
-import { GLTFTruckModel } from './vehicle/GLTFTruckModel';
 import { ForestStageMap } from './world/ForestStageMap';
 import { FollowCamera } from './camera/FollowCamera';
 import { InputManager } from './input/InputManager';
@@ -21,8 +20,7 @@ class Game {
   private postProcessing!: PostProcessingManager;
   private physics!: PhysicsWorld;
   private vehicle!: RaycastVehicle;
-  private fallbackTruckModel!: TruckModel;
-  private gltfTruckModel!: GLTFTruckModel;
+  private truckModel!: TruckModel;
   private forestMap!: ForestStageMap;
   private atmosphere!: Atmosphere;
   private input!: InputManager;
@@ -76,7 +74,7 @@ class Game {
     this.rallyAudio = new RallyEngineAudio();
     this.audio = new AudioManager();
     this.dust = new DustParticleSystem();
-    this.scene.add(this.dust.mesh);
+    this.scene.add(this.dust.group);
 
     // 5. Initialize Stage Timer & Fuel System
     this.stageTimer = new StageTimer();
@@ -93,17 +91,9 @@ class Game {
     const spawnPos = new THREE.Vector3(0, 3.5, 0);
     this.vehicle = new RaycastVehicle(this.physics.rapier, this.physics.world, spawnPos);
 
-    this.fallbackTruckModel = new TruckModel();
-    this.gltfTruckModel = new GLTFTruckModel();
-    this.scene.add(this.gltfTruckModel.group);
-    this.scene.add(this.fallbackTruckModel.group);
-
-    // Load 6x6 Heavy Truck Model
-    this.gltfTruckModel.loadModel('/assets/models/dakar_truck.glb').then((loaded) => {
-      if (loaded) {
-        this.fallbackTruckModel.group.visible = false;
-      }
-    });
+    // Hero Dakar 6x6 Rally Truck (Full 3-Axle Suspension & Mud Tires)
+    this.truckModel = new TruckModel();
+    this.scene.add(this.truckModel.group);
 
     // Setup Sound Toggle UI
     this.setupAudioUI();
@@ -182,12 +172,8 @@ class Game {
     // Determine Braking state for brake lights
     const isBraking = inputState.handbrake || (inputState.throttle < 0 && this.vehicle.speedKmh > 1.2);
 
-    // Update 3D Visual Mesh & Suspension
-    if (this.gltfTruckModel.isLoaded) {
-      this.gltfTruckModel.update(this.vehicle, isBraking);
-    } else {
-      this.fallbackTruckModel.update(this.vehicle, isBraking);
-    }
+    // Update Hero Dakar 6x6 3D Mesh, Wheels & Suspension
+    this.truckModel.update(this.vehicle, isBraking);
 
     // Calculate lateral slip for tire sounds & particles
     const chassisLinVel = this.vehicle.chassisBody.linvel();
@@ -259,6 +245,13 @@ class Game {
             this.dust.emitWheelDust(w.worldPosition, truckVel, intensity);
           }
         }
+      }
+
+      // Diesel exhaust soot from dual chrome stacks under throttle
+      if (inputState.throttle > 0.08) {
+        const tips = this.truckModel.getExhaustWorldPositions();
+        this.dust.emitExhaustSmoke(tips.left, truckVel, inputState.throttle);
+        this.dust.emitExhaustSmoke(tips.right, truckVel, inputState.throttle);
       }
     }
     this.dust.update(dt);
