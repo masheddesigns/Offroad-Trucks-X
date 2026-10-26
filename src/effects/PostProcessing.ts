@@ -66,7 +66,7 @@ export class PostProcessingManager {
 
     // 2. Controlled Bloom (Only bright emissive lights glow, NOT the sky/ground!)
     const res = new THREE.Vector2(width, height);
-    this.bloomPass = new UnrealBloomPass(res, 0.35, 0.25, 1.35);
+    this.bloomPass = new UnrealBloomPass(res, 0.28, 0.2, 1.45);
     this.composer.addPass(this.bloomPass);
 
     // 3. Cinematic Color Grading & Vignette Pass

@@ -71,11 +71,13 @@ export class GLTFTruckModel {
     if (!this.isLoaded || !this.chassisMesh) return;
 
     // 1. Sync Chassis Body Position & Rotation with Physics
-    // Offset by -1.52m so the 3D model wheels rest firmly on the ground surface
+    // Apply local offset rotated by chassis orientation so the model pivots around the true center of mass
     const trans = vehicle.chassisBody.translation();
     const rot = vehicle.chassisBody.rotation();
-    this.chassisMesh.position.set(trans.x, trans.y - 1.52, trans.z);
-    this.chassisMesh.quaternion.set(rot.x, rot.y, rot.z, rot.w);
+    const chassisQuat = new THREE.Quaternion(rot.x, rot.y, rot.z, rot.w);
+    const localOffset = new THREE.Vector3(0, -1.48, 0.22).applyQuaternion(chassisQuat);
+    this.chassisMesh.position.set(trans.x + localOffset.x, trans.y + localOffset.y, trans.z + localOffset.z);
+    this.chassisMesh.quaternion.copy(chassisQuat);
 
     // 2. Animate Axles (Steering, Wheel Spin, Suspension Compression)
     const frontAvgSpin = (vehicle.wheels[0].rotationAngle + vehicle.wheels[1].rotationAngle) * 0.5;

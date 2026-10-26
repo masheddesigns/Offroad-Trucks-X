@@ -158,9 +158,14 @@ export class ForestStageMap {
     roughMap.wrapT = THREE.RepeatWrapping;
     roughMap.repeat.set(38, 38);
 
+    diffMap.anisotropy = 4;
+    norMap.anisotropy = 4;
+    roughMap.anisotropy = 4;
+
     const mat = new THREE.MeshStandardMaterial({
       map: diffMap,
       normalMap: norMap,
+      normalScale: new THREE.Vector2(0.4, 0.4),
       roughnessMap: roughMap,
       vertexColors: true,
       roughness: 0.9,

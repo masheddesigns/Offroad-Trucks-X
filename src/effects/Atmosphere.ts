@@ -53,16 +53,14 @@ export class Atmosphere {
     this.hemiLight = new THREE.HemisphereLight(0xdde8f2, 0x221a14, 1.05);
     scene.add(this.hemiLight);
 
-    // 5. Authentic 360° Photorealistic Mountain Forest HDRI Sky & IBL
+    // 5. Authentic 360° Photorealistic Mountain Forest HDRI for Image-Based Lighting
     const rgbeLoader = new RGBELoader();
     rgbeLoader.load(
       '/assets/textures/hdri/forest_slope_1k.hdr',
       (texture) => {
         texture.mapping = THREE.EquirectangularReflectionMapping;
-        scene.background = texture;
-        scene.environment = texture;
-        this.sky.visible = false; // Hide synthetic sky when real HDRI is loaded!
-        console.log('[Atmosphere] Loaded authentic Poly Haven 360° Mountain Forest HDRI.');
+        scene.environment = texture; // Rich PBR reflections on chrome, paint, and windows!
+        console.log('[Atmosphere] Loaded authentic Poly Haven 360° Mountain Forest HDRI for environment reflections.');
       },
       undefined,
       (err) => {

@@ -60,26 +60,25 @@ export class RaycastVehicle {
     // 1. Create Heavy Truck Chassis Body
     const bodyDesc = rapier.RigidBodyDesc.dynamic()
       .setTranslation(initialPos.x, initialPos.y, initialPos.z)
-      .setLinearDamping(0.2)
-      .setAngularDamping(0.8)
+      .setLinearDamping(0.35)
+      .setAngularDamping(1.8) // High damping for rock-solid Dakar stability
       .setCanSleep(false);
 
     this.chassisBody = world.createRigidBody(bodyDesc);
 
     // 2. Chassis Collider (Length: 5.6m, Width: 2.6m, Height: 1.8m)
-    // Half extents: x: 1.25, y: 0.75, z: 2.6
     const colliderDesc = rapier.ColliderDesc.cuboid(1.25, 0.75, 2.6)
       .setDensity(1.0)
-      .setFriction(0.4)
-      .setRestitution(0.05);
+      .setFriction(0.5)
+      .setRestitution(0.02);
 
     this.chassisCollider = world.createCollider(colliderDesc, this.chassisBody);
 
-    // Center of mass offset: keep it slightly low for stable Dakar handling
+    // Center of mass offset: keep it low for heavy bottom-weighted Dakar ladder frame
     this.chassisCollider.setMassProperties(
-      7500.0, // 7.5 metric tons (Dakar rally truck spec)
-      { x: 0, y: -0.4, z: 0 },
-      { x: 8000, y: 12000, z: 8000 },
+      7500.0, // 7.5 metric tons
+      { x: 0, y: -0.65, z: 0 },
+      { x: 24000, y: 26000, z: 16000 }, // True physical moment of inertia
       { x: 0, y: 0, z: 0, w: 1 }
     );
 
@@ -95,8 +94,8 @@ export class RaycastVehicle {
         localMountPoint: new THREE.Vector3(-trackWidth, -0.2, wheelbase),
         radius: wheelRadius,
         suspensionRestLength: restLen,
-        suspensionStiffness: 58000,
-        suspensionDamping: 5200,
+        suspensionStiffness: 56000,
+        suspensionDamping: 13500, // Critical damping tuned to prevent bouncing
         maxTravel: 0.55,
         isFront: true,
         isDrive: true
@@ -106,8 +105,8 @@ export class RaycastVehicle {
         localMountPoint: new THREE.Vector3(trackWidth, -0.2, wheelbase),
         radius: wheelRadius,
         suspensionRestLength: restLen,
-        suspensionStiffness: 58000,
-        suspensionDamping: 5200,
+        suspensionStiffness: 56000,
+        suspensionDamping: 13500,
         maxTravel: 0.55,
         isFront: true,
         isDrive: true
@@ -117,8 +116,8 @@ export class RaycastVehicle {
         localMountPoint: new THREE.Vector3(-trackWidth, -0.2, -wheelbase),
         radius: wheelRadius,
         suspensionRestLength: restLen,
-        suspensionStiffness: 64000,
-        suspensionDamping: 5600,
+        suspensionStiffness: 62000,
+        suspensionDamping: 14500,
         maxTravel: 0.55,
         isFront: false,
         isDrive: true
@@ -128,8 +127,8 @@ export class RaycastVehicle {
         localMountPoint: new THREE.Vector3(trackWidth, -0.2, -wheelbase),
         radius: wheelRadius,
         suspensionRestLength: restLen,
-        suspensionStiffness: 64000,
-        suspensionDamping: 5600,
+        suspensionStiffness: 62000,
+        suspensionDamping: 14500,
         maxTravel: 0.55,
         isFront: false,
         isDrive: true
@@ -350,9 +349,9 @@ export class RaycastVehicle {
       }
     }
 
-    // Anti-Roll Bar simulation (Front Axle & Rear Axle)
-    this.applyAntiRollBar(this.wheels[0], this.wheels[1], dt, chassisPos);
-    this.applyAntiRollBar(this.wheels[2], this.wheels[3], dt, chassisPos);
+    // Anti-Roll Bar simulation along local chassis up vector (Front & Rear Axles)
+    this.applyAntiRollBar(this.wheels[0], this.wheels[1], dt, vUp);
+    this.applyAntiRollBar(this.wheels[2], this.wheels[3], dt, vUp);
 
     // Airtime Tracker
     this.isAirborne = totalWheelsGrounded === 0;
@@ -368,12 +367,12 @@ export class RaycastVehicle {
     }
   }
 
-  private applyAntiRollBar(wheelL: WheelState, wheelR: WheelState, dt: number, chassisPos: THREE.Vector3) {
+  private applyAntiRollBar(wheelL: WheelState, wheelR: WheelState, dt: number, vUp: THREE.Vector3) {
     const travelDiff = wheelL.compression - wheelR.compression;
     if (Math.abs(travelDiff) > 0.001) {
       const antiRollForce = travelDiff * this.antiRollStiffness;
-      const impulseL = new THREE.Vector3(0, -antiRollForce * dt, 0);
-      const impulseR = new THREE.Vector3(0, antiRollForce * dt, 0);
+      const impulseL = vUp.clone().multiplyScalar(-antiRollForce * dt);
+      const impulseR = vUp.clone().multiplyScalar(antiRollForce * dt);
 
       this.chassisBody.applyImpulseAtPoint(
         { x: impulseL.x, y: impulseL.y, z: impulseL.z },
