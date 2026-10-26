@@ -14,10 +14,10 @@ export class Atmosphere {
     scene.add(this.sky);
 
     const skyUniforms = this.sky.material.uniforms;
-    skyUniforms['turbidity'].value = 6.5; // Crisp alpine atmosphere
-    skyUniforms['rayleigh'].value = 1.4; // Mountain sky blue
-    skyUniforms['mieCoefficient'].value = 0.005;
-    skyUniforms['mieDirectionalG'].value = 0.82;
+    skyUniforms['turbidity'].value = 3.2; // Clean mountain atmosphere
+    skyUniforms['rayleigh'].value = 2.2; // Rich alpine sky blue
+    skyUniforms['mieCoefficient'].value = 0.003;
+    skyUniforms['mieDirectionalG'].value = 0.8;
 
     // Golden Hour Sun Position (Elevation ~22 degrees, Azimuth ~135 degrees)
     const elevation = 22;
@@ -27,11 +27,11 @@ export class Atmosphere {
     this.sunPosition.setFromSphericalCoords(1, phi, theta);
     skyUniforms['sunPosition'].value.copy(this.sunPosition);
 
-    // 2. Horizon Fog (Crisp Alpine Forest Horizon Mist - Matches Sky Tone)
-    scene.fog = new THREE.FogExp2(0xa6b8c7, 0.0028);
+    // 2. Horizon Fog (Crisp Alpine Horizon Mist - Matches Sky Tone)
+    scene.fog = new THREE.FogExp2(0x94a8ba, 0.0022);
 
     // 3. Rich Sunlight & Dynamic Shadows
-    this.sunLight = new THREE.DirectionalLight(0xfff7e8, 3.2);
+    this.sunLight = new THREE.DirectionalLight(0xfff8ee, 2.6);
     this.sunLight.position.copy(this.sunPosition).multiplyScalar(150);
     this.sunLight.castShadow = true;
     this.sunLight.shadow.mapSize.width = 2048;
@@ -49,7 +49,7 @@ export class Atmosphere {
     scene.add(this.sunLight);
 
     // 4. Ambient Fill Light (Blue alpine sky above, warm earthy loam bounce below)
-    this.hemiLight = new THREE.HemisphereLight(0xdce7f0, 0x241d17, 1.25);
+    this.hemiLight = new THREE.HemisphereLight(0xdde8f2, 0x221a14, 1.05);
     scene.add(this.hemiLight);
 
     // 5. Image-Based Lighting (IBL) Environment Map for Metallic & Glass Reflections

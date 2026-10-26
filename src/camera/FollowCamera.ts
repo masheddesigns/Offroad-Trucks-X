@@ -9,10 +9,10 @@ export class FollowCamera {
 
   // Free Orbit Controls (Mouse & Touch)
   public orbitYaw: number = 0.0; // Horizontal orbit offset in radians
-  public orbitPitch: number = 0.28; // Vertical elevation angle in radians (~16 degrees)
-  public distance: number = 12.5; // Distance from vehicle center
-  public minDistance: number = 5.5;
-  public maxDistance: number = 32.0;
+  public orbitPitch: number = 0.18; // Eye-level action elevation (~10 degrees)
+  public distance: number = 7.5; // Closer, immersive heavy truck view
+  public minDistance: number = 4.0;
+  public maxDistance: number = 24.0;
 
   private isDragging: boolean = false;
   private lastPointerX: number = 0;
@@ -25,8 +25,8 @@ export class FollowCamera {
   private currentLookAt: THREE.Vector3 = new THREE.Vector3();
 
   constructor(aspect: number) {
-    this.camera = new THREE.PerspectiveCamera(60, aspect, 0.2, 1000);
-    this.camera.position.set(0, 10, -20);
+    this.camera = new THREE.PerspectiveCamera(52, aspect, 0.2, 1000);
+    this.camera.position.set(0, 5, -12);
     this.setupPointerControls();
   }
 

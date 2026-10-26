@@ -451,6 +451,7 @@ export class TruckModel {
     });
 
     this.shadowPlane = new THREE.Mesh(shadowGeo, shadowMat);
+    this.shadowPlane.renderOrder = 1;
     this.group.add(this.shadowPlane);
   }
 
