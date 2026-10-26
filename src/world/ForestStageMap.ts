@@ -141,14 +141,30 @@ export class ForestStageMap {
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geo.computeVertexNormals();
 
-    // Natural Organic Ground Texture (NO repeating sine wave diamond patterns!)
-    const diffuseMap = this.createMatteForestFloorTexture();
+    // Real Scanned PBR Terrain Textures from Poly Haven (CC0 Photogrammetry)
+    const texLoader = new THREE.TextureLoader();
+    const diffMap = texLoader.load('/assets/textures/terrain/mud_diff_1k.jpg');
+    diffMap.wrapS = THREE.RepeatWrapping;
+    diffMap.wrapT = THREE.RepeatWrapping;
+    diffMap.repeat.set(38, 38);
+
+    const norMap = texLoader.load('/assets/textures/terrain/mud_nor_1k.jpg');
+    norMap.wrapS = THREE.RepeatWrapping;
+    norMap.wrapT = THREE.RepeatWrapping;
+    norMap.repeat.set(38, 38);
+
+    const roughMap = texLoader.load('/assets/textures/terrain/mud_rough_1k.jpg');
+    roughMap.wrapS = THREE.RepeatWrapping;
+    roughMap.wrapT = THREE.RepeatWrapping;
+    roughMap.repeat.set(38, 38);
 
     const mat = new THREE.MeshStandardMaterial({
-      map: diffuseMap,
+      map: diffMap,
+      normalMap: norMap,
+      roughnessMap: roughMap,
       vertexColors: true,
-      roughness: 0.94, // Completely matte natural earth (no shiny plastic diamonds!)
-      metalness: 0.02,
+      roughness: 0.9,
+      metalness: 0.04,
       flatShading: false
     });
 

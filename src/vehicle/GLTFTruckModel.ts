@@ -71,9 +71,10 @@ export class GLTFTruckModel {
     if (!this.isLoaded || !this.chassisMesh) return;
 
     // 1. Sync Chassis Body Position & Rotation with Physics
+    // Offset by -1.52m so the 3D model wheels rest firmly on the ground surface
     const trans = vehicle.chassisBody.translation();
     const rot = vehicle.chassisBody.rotation();
-    this.chassisMesh.position.set(trans.x, trans.y - 0.35, trans.z);
+    this.chassisMesh.position.set(trans.x, trans.y - 1.52, trans.z);
     this.chassisMesh.quaternion.set(rot.x, rot.y, rot.z, rot.w);
 
     // 2. Animate Axles (Steering, Wheel Spin, Suspension Compression)

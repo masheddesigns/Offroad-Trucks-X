@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 
 export class Atmosphere {
   public sky: Sky;
@@ -8,7 +9,7 @@ export class Atmosphere {
   public sunPosition: THREE.Vector3 = new THREE.Vector3();
 
   constructor(scene: THREE.Scene, renderer?: THREE.WebGLRenderer) {
-    // 1. Physically-Based Nishita Atmospheric Sky
+    // 1. Physically-Based Nishita Atmospheric Sky (Fallback & Initial)
     this.sky = new Sky();
     this.sky.scale.setScalar(450000);
     scene.add(this.sky);
@@ -52,20 +53,22 @@ export class Atmosphere {
     this.hemiLight = new THREE.HemisphereLight(0xdde8f2, 0x221a14, 1.05);
     scene.add(this.hemiLight);
 
-    // 5. Image-Based Lighting (IBL) Environment Map for Metallic & Glass Reflections
-    if (renderer) {
-      try {
-        const pmrem = new THREE.PMREMGenerator(renderer);
-        pmrem.compileEquirectangularShader();
-        const skyScene = new THREE.Scene();
-        skyScene.add(this.sky.clone());
-        const envTexture = pmrem.fromScene(skyScene).texture;
-        scene.environment = envTexture;
-        pmrem.dispose();
-      } catch (err) {
-        console.warn('IBL generation fallback:', err);
+    // 5. Authentic 360° Photorealistic Mountain Forest HDRI Sky & IBL
+    const rgbeLoader = new RGBELoader();
+    rgbeLoader.load(
+      '/assets/textures/hdri/forest_slope_1k.hdr',
+      (texture) => {
+        texture.mapping = THREE.EquirectangularReflectionMapping;
+        scene.background = texture;
+        scene.environment = texture;
+        this.sky.visible = false; // Hide synthetic sky when real HDRI is loaded!
+        console.log('[Atmosphere] Loaded authentic Poly Haven 360° Mountain Forest HDRI.');
+      },
+      undefined,
+      (err) => {
+        console.warn('[Atmosphere] HDRI fallback to physical sky:', err);
       }
-    }
+    );
   }
 
   public updateLightTarget(targetPos: THREE.Vector3) {
