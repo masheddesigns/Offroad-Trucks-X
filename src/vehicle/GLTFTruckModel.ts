@@ -183,15 +183,16 @@ export class GLTFTruckModel {
           // 10. Wheel Rims (Anthracite / Beadlock Satin Finish)
           else if (matName.includes('wheels')) {
             rimsMesh = mesh;
-            mat.color.setHex(0x262626);
+            mat.color.setHex(0xffffff); // Preserve authentic wheel textures, bolts, and beadlocks
             mat.roughness = 0.35;
-            mat.metalness = 0.45;
+            mat.metalness = 0.55;
           }
-          // 11. Heavy Rally Tires (Deep Matte Black Rubber)
+          // 11. Heavy Rally Tires (BFGoodrich Mud-Terrain T/A Dakar Livery)
           else if (matName.includes('banda') || matName.includes('tyre')) {
             tiresMesh = mesh;
-            mat.color.setHex(0x1a1a1a);
+            mat.color.setHex(0xffffff); // Preserve crisp white BFGoodrich lettering & blue logos
             mat.roughness = 0.85;
+            mat.metalness = 0.05;
           }
 
           mat.needsUpdate = true;
@@ -364,8 +365,8 @@ export class GLTFTruckModel {
       _spinQuat.setFromAxisAngle(_spinAxis, wheelState.rotationAngle);
 
       if (wn.isFront) {
-        // Front Wheels: Steer around vertical Z axis and roll around X axis
-        _steerQuat.setFromAxisAngle(_steerAxis, vehicle.currentSteer);
+        // Front Wheels: Steer around vertical Z axis and roll around X axis (matched to vehicle steer direction)
+        _steerQuat.setFromAxisAngle(_steerAxis, -vehicle.currentSteer);
         wn.group.quaternion.copy(_steerQuat).multiply(_spinQuat);
       } else {
         // Rear Wheels: Roll around X axis
