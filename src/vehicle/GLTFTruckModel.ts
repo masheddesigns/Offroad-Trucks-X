@@ -25,13 +25,14 @@ export interface LiveryPalette {
   fill: number;
   trim: number;
   rollCage: number;
+  rims: number;
 }
 
 export const LIVERY_PRESETS: Record<TruckLivery, LiveryPalette> = {
-  RED: { body: 0xd31212, fill: 0xb51010, trim: 0x181818, rollCage: 0xd31212 },      // Iconic MAZ-SPORTauto Rally Red
-  BLUE: { body: 0x0a60dd, fill: 0x084cb2, trim: 0x141414, rollCage: 0x0a60dd },    // Iconic Kamaz-Master Blue
-  GOLD: { body: 0xd4a017, fill: 0xb8860b, trim: 0x181818, rollCage: 0xd4a017 },    // Desert Raid Gold
-  BLACK: { body: 0x1e1e1e, fill: 0x141414, trim: 0xaa1111, rollCage: 0xcc1111 }     // Stealth Carbon / Matte Black
+  RED: { body: 0xd31212, fill: 0xb51010, trim: 0x181818, rollCage: 0xd31212, rims: 0xd99518 },      // Satin Dakar Gold rims
+  BLUE: { body: 0x0a60dd, fill: 0x084cb2, trim: 0x141414, rollCage: 0x0a60dd, rims: 0xe5a920 },    // Kamaz-Master Golden Rally Rims
+  GOLD: { body: 0xd4a017, fill: 0xb8860b, trim: 0x181818, rollCage: 0xd4a017, rims: 0x222222 },    // Matte Black beadlocks
+  BLACK: { body: 0x1e1e1e, fill: 0x141414, trim: 0xaa1111, rollCage: 0xcc1111, rims: 0xd31212 }     // Crimson Red racing rims
 };
 
 export class GLTFTruckModel {
@@ -44,6 +45,8 @@ export class GLTFTruckModel {
   public fillMaterials: THREE.MeshStandardMaterial[] = [];
   public trimMaterials: THREE.MeshStandardMaterial[] = [];
   public rollCageMaterials: THREE.MeshStandardMaterial[] = [];
+  public rimMaterials: THREE.MeshStandardMaterial[] = [];
+  public customRimColorIndex: number = 0;
   public isMazDakar: boolean = false;
   public currentLivery: TruckLivery = 'RED';
 
@@ -99,6 +102,7 @@ export class GLTFTruckModel {
     this.fillMaterials = [];
     this.trimMaterials = [];
     this.rollCageMaterials = [];
+    this.rimMaterials = [];
 
     mazGroup.traverse((node) => {
       if ((node as THREE.Mesh).isMesh) {
@@ -183,9 +187,10 @@ export class GLTFTruckModel {
           // 10. Wheel Rims (Anthracite / Beadlock Satin Finish)
           else if (matName.includes('wheels')) {
             rimsMesh = mesh;
-            mat.color.setHex(0xffffff); // Preserve authentic wheel textures, bolts, and beadlocks
-            mat.roughness = 0.35;
-            mat.metalness = 0.55;
+            this.rimMaterials.push(mat);
+            mat.roughness = 0.28;
+            mat.metalness = 0.75;
+            mat.envMapIntensity = 2.0;
           }
           // 11. Heavy Rally Tires (BFGoodrich Mud-Terrain T/A Dakar Livery)
           else if (matName.includes('banda') || matName.includes('tyre')) {
@@ -406,7 +411,45 @@ export class GLTFTruckModel {
       mat.color.setHex(p.rollCage);
       mat.needsUpdate = true;
     }
-    console.log(`[GLTFTruckModel] Applied Dakar livery: ${livery}`);
+
+    const rimColor = this.getCuratedRimColor();
+    for (const mat of this.rimMaterials) {
+      mat.color.setHex(rimColor);
+      mat.roughness = 0.28;
+      mat.metalness = 0.75;
+      mat.envMapIntensity = 2.0;
+      mat.needsUpdate = true;
+    }
+    console.log(`[GLTFTruckModel] Applied Dakar livery: ${livery} (Rims: #${rimColor.toString(16)})`);
+  }
+
+  public static readonly RIM_OPTIONS = [
+    { name: 'Livery Match', color: -1 },
+    { name: 'Dakar Gold', color: 0xd99518 },
+    { name: 'Rally Red', color: 0xd31212 },
+    { name: 'Forged White', color: 0xf0f0f0 },
+    { name: 'Electric Blue', color: 0x0a60dd },
+    { name: 'Gunmetal Bronze', color: 0x8a6225 },
+    { name: 'Stealth Black', color: 0x222222 }
+  ];
+
+  public getCuratedRimColor(): number {
+    const opt = GLTFTruckModel.RIM_OPTIONS[this.customRimColorIndex];
+    if (opt && opt.color !== -1) {
+      return opt.color;
+    }
+    return LIVERY_PRESETS[this.currentLivery].rims;
+  }
+
+  public cycleRimColor(): string {
+    this.customRimColorIndex = (this.customRimColorIndex + 1) % GLTFTruckModel.RIM_OPTIONS.length;
+    const rimColor = this.getCuratedRimColor();
+    for (const mat of this.rimMaterials) {
+      mat.color.setHex(rimColor);
+      mat.needsUpdate = true;
+    }
+    const opt = GLTFTruckModel.RIM_OPTIONS[this.customRimColorIndex];
+    return opt.name;
   }
 
   public cycleLivery(): TruckLivery {

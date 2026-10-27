@@ -54,6 +54,8 @@ class Game {
   private soundLabelEl = document.getElementById('sound-label');
   private btnPaint = document.getElementById('btn-paint');
   private paintLabelEl = document.getElementById('paint-label');
+  private btnRims = document.getElementById('btn-rims');
+  private rimsLabelEl = document.getElementById('rims-label');
 
   public async init() {
     const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
@@ -168,6 +170,12 @@ class Game {
       }
     };
 
+    const updateRimsLabel = (name?: string) => {
+      if (this.rimsLabelEl) {
+        this.rimsLabelEl.textContent = name || 'Dakar Gold';
+      }
+    };
+
     this.btnPaint?.addEventListener('click', (e) => {
       e.preventDefault();
       this.gltfTruckModel.cycleLivery();
@@ -178,6 +186,19 @@ class Game {
       if (e.code === 'KeyP') {
         this.gltfTruckModel.cycleLivery();
         updatePaintLabel();
+      }
+    });
+
+    this.btnRims?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const name = this.gltfTruckModel.cycleRimColor();
+      updateRimsLabel(name);
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyK') {
+        const name = this.gltfTruckModel.cycleRimColor();
+        updateRimsLabel(name);
       }
     });
   }
