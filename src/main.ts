@@ -6,7 +6,7 @@ import { GLTFTruckModel } from './vehicle/GLTFTruckModel';
 import { ForestStageMap } from './world/ForestStageMap';
 import { FollowCamera } from './camera/FollowCamera';
 import { InputManager } from './input/InputManager';
-import { RallyEngineAudio } from './audio/RallyEngineAudio';
+import { DakarDieselEngineAudio } from './audio/DakarDieselEngineAudio';
 import { AudioManager } from './audio/AudioManager';
 import { DustParticleSystem } from './effects/DustParticles';
 import { Atmosphere } from './effects/Atmosphere';
@@ -34,7 +34,7 @@ class Game {
   private forestMap!: ForestStageMap;
   private atmosphere!: Atmosphere;
   private input!: InputManager;
-  private rallyAudio!: RallyEngineAudio;
+  private dakarAudio!: DakarDieselEngineAudio;
   private audio!: AudioManager;
   private dust!: DustParticleSystem;
   private stageTimer!: StageTimer;
@@ -81,7 +81,7 @@ class Game {
     this.postProcessing = new PostProcessingManager(this.renderer, this.scene, this.cameraController.camera);
 
     // 4. Initialize Audio & Particle Systems
-    this.rallyAudio = new RallyEngineAudio();
+    this.dakarAudio = new DakarDieselEngineAudio();
     this.audio = new AudioManager();
     this.dust = new DustParticleSystem();
     this.scene.add(this.dust.group);
@@ -98,19 +98,19 @@ class Game {
     this.scene.add(this.forestMap.mesh);
 
     // Staging position at the rally start line facing north into the pine forest tunnel
-    const startY = this.forestMap.getTerrainHeight(0, 12) + 1.35;
+    const startY = this.forestMap.getTerrainHeight(0, 12) + 1.45;
     const spawnPos = new THREE.Vector3(0, startY, 12);
     this.vehicle = new RaycastVehicle(this.physics.rapier, this.physics.world, spawnPos);
 
-    // Hero 6x6 Off-Road Visual Rig
+    // Hero Dakar Rally Visual Rig
     this.truckModel = new TruckModel();
     this.truckModel.group.visible = false; // Hide primitive box truck
     this.gltfTruckModel = new GLTFTruckModel();
     this.scene.add(this.truckModel.group);
     this.scene.add(this.gltfTruckModel.group);
 
-    // Await authentic 3D Truck Model before starting so it renders on frame 1
-    const loaded = await this.gltfTruckModel.loadModel('/assets/models/dakar_truck.glb');
+    // Load authentic MAZ-6440RR Dakar Truck Model
+    const loaded = await this.gltfTruckModel.loadModel('/assets/models/maz_6440rr_dakar.glb');
     if (loaded) {
       this.useGLTF = true;
       this.gltfTruckModel.group.visible = true;
@@ -135,7 +135,7 @@ class Game {
   private setupAudioUI() {
     const updateSoundLabel = () => {
       if (this.soundLabelEl) {
-        this.soundLabelEl.textContent = this.rallyAudio.isMuted ? 'Muted' : 'Sound ON';
+        this.soundLabelEl.textContent = this.dakarAudio.isMuted ? 'Muted' : 'Sound ON';
       }
     };
 
@@ -143,8 +143,8 @@ class Game {
 
     this.btnSound?.addEventListener('click', (e) => {
       e.preventDefault();
-      this.rallyAudio.init();
-      this.rallyAudio.toggleMute();
+      this.dakarAudio.init();
+      this.dakarAudio.toggleMute();
       this.audio.toggleMute();
       updateSoundLabel();
     });
@@ -210,8 +210,8 @@ class Game {
     _vRight.set(1, 0, 0).applyQuaternion(_chassisQuat);
     const lateralSlipSpeed = _truckVel.dot(_vRight);
 
-    // Update Audio Systems with Vehicle Telemetry
-    this.rallyAudio.update(dt, this.vehicle.speedKmh, inputState.throttle);
+    // Update Dakar Turbodiesel Audio System with Vehicle Telemetry
+    this.dakarAudio.update(dt, this.vehicle.speedKmh, inputState.throttle, isBraking);
 
     // Keep tire skids, landings, and wind rush from AudioManager
     this.audio.setEngineVolume(0.0);
@@ -316,17 +316,7 @@ class Game {
     }
 
     if (this.gearEl) {
-      if (throttleInput < -0.1 && this.vehicle.speedKmh > 1.0) {
-        this.gearEl.textContent = 'R';
-      } else {
-        const spd = this.vehicle.speedKmh;
-        if (spd < 18) this.gearEl.textContent = '1';
-        else if (spd < 38) this.gearEl.textContent = '2';
-        else if (spd < 62) this.gearEl.textContent = '3';
-        else if (spd < 92) this.gearEl.textContent = '4';
-        else if (spd < 122) this.gearEl.textContent = '5';
-        else this.gearEl.textContent = '6';
-      }
+      this.gearEl.textContent = String(this.dakarAudio.currentGear);
     }
   }
 }

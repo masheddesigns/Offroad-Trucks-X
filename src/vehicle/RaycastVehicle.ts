@@ -103,94 +103,73 @@ export class RaycastVehicle {
 
     this.chassisBody = world.createRigidBody(bodyDesc);
 
-    // 2. Chassis Collider (Length: 5.6m, Width: 2.6m, Height: 1.6m)
-    const colliderDesc = rapier.ColliderDesc.cuboid(1.25, 0.75, 2.6)
+    // 2. Chassis Collider (Length: 6.8m, Width: 2.6m, Height: 2.4m for MAZ-6440RR Dakar)
+    const colliderDesc = rapier.ColliderDesc.cuboid(1.25, 0.85, 3.2)
       .setDensity(1.0)
       .setFriction(0.6)
       .setRestitution(0.01);
 
     this.chassisCollider = world.createCollider(colliderDesc, this.chassisBody);
 
-    // Low Center of Mass for Authentic Off-Road Stability
+    // Low Center of Mass for Authentic Off-Road Stability (8,200 kg Dakar Rally Raid)
     this.chassisCollider.setMassProperties(
-      7500.0, // 7.5 metric tons
-      { x: 0, y: -0.65, z: -0.15 },
-      { x: 26000, y: 28000, z: 18000 },
+      8200.0, // 8.2 metric tons
+      { x: 0, y: -0.65, z: -0.10 },
+      { x: 28000, y: 32000, z: 20000 },
       { x: 0, y: 0, z: 0, w: 1 }
     );
     this.chassisBody.recomputeMassPropertiesFromColliders();
 
-    // 3. Define 6 Physical Wheels for the 6x6 Heavy All-Terrain Setup
-    const trackWidth = 1.28;
-    const wheelRadius = 0.58;
-    const restLen = 0.76;
-    const mountY = -0.25;
+    // 3. Define 4 Physical Wheels for the 4x4 MAZ-6440RR Dakar Setup
+    const trackWidth = 1.06;
+    const wheelRadius = 0.65;
+    const restLen = 0.82;
+    const mountY = -0.15;
 
-    // Per-wheel spring rate: ~42,000 N/m. Critical damping ~14,490 Ns/m. Tuned to 11,200 Ns/m.
-    const kSpring = 42000;
-    const kDamp = 11200;
+    // Per-wheel spring rate: ~48,000 N/m. Tuned for 8.2-ton Dakar Rally Raid Truck
+    const kSpring = 48000;
+    const kDamp = 13500;
 
     const wheelConfigs: WheelConfig[] = [
       // Axle 1: Front Steering & 4WD Drive
       {
-        localMountPoint: new THREE.Vector3(-trackWidth, mountY, 2.40),
+        localMountPoint: new THREE.Vector3(-trackWidth, mountY, 2.16),
         radius: wheelRadius,
         suspensionRestLength: restLen,
         suspensionStiffness: kSpring,
         suspensionDamping: kDamp,
-        maxTravel: 0.52,
+        maxTravel: 0.55,
         isFront: true,
         isDrive: true
       },
       {
-        localMountPoint: new THREE.Vector3(trackWidth, mountY, 2.40),
+        localMountPoint: new THREE.Vector3(trackWidth, mountY, 2.16),
         radius: wheelRadius,
         suspensionRestLength: restLen,
         suspensionStiffness: kSpring,
         suspensionDamping: kDamp,
-        maxTravel: 0.52,
+        maxTravel: 0.55,
         isFront: true,
         isDrive: true
       },
-      // Axle 2: Mid Tandem Drive
+      // Axle 2: Rear Axle with Differential Lock & 4WD Drive
       {
-        localMountPoint: new THREE.Vector3(-trackWidth, mountY, -1.35),
+        localMountPoint: new THREE.Vector3(-trackWidth, mountY, -2.14),
         radius: wheelRadius,
         suspensionRestLength: restLen,
-        suspensionStiffness: kSpring + 3000,
-        suspensionDamping: kDamp + 800,
-        maxTravel: 0.52,
+        suspensionStiffness: kSpring + 4000,
+        suspensionDamping: kDamp + 1000,
+        maxTravel: 0.55,
         isFront: false,
         isDrive: true
       },
       {
-        localMountPoint: new THREE.Vector3(trackWidth, mountY, -1.35),
+        localMountPoint: new THREE.Vector3(trackWidth, mountY, -2.14),
         radius: wheelRadius,
         suspensionRestLength: restLen,
-        suspensionStiffness: kSpring + 3000,
-        suspensionDamping: kDamp + 800,
-        maxTravel: 0.52,
-        isFront: false,
-        isDrive: true
-      },
-      // Axle 3: Rear Tandem Drive
-      {
-        localMountPoint: new THREE.Vector3(-trackWidth, mountY, -2.66),
-        radius: wheelRadius,
-        suspensionRestLength: restLen,
-        suspensionStiffness: kSpring + 3000,
-        suspensionDamping: kDamp + 800,
-        maxTravel: 0.52,
-        isFront: false,
-        isDrive: true
-      },
-      {
-        localMountPoint: new THREE.Vector3(trackWidth, mountY, -2.66),
-        radius: wheelRadius,
-        suspensionRestLength: restLen,
-        suspensionStiffness: kSpring + 3000,
-        suspensionDamping: kDamp + 800,
-        maxTravel: 0.52,
+        suspensionStiffness: kSpring + 4000,
+        suspensionDamping: kDamp + 1000,
+        maxTravel: 0.55,
         isFront: false,
         isDrive: true
       }
@@ -408,11 +387,14 @@ export class RaycastVehicle {
       }
     }
 
-    // Anti-Roll Bar simulation along local chassis up vector (Front, Mid, Rear Axles)
+    // Anti-Roll Bar simulation along local chassis up vector (Front & Rear Axles)
     if (this.wheels.length >= 6) {
       this.applyAntiRollBar(this.wheels[0], this.wheels[1], dt, _vUp);
       this.applyAntiRollBar(this.wheels[2], this.wheels[3], dt, _vUp);
       this.applyAntiRollBar(this.wheels[4], this.wheels[5], dt, _vUp);
+    } else if (this.wheels.length >= 4) {
+      this.applyAntiRollBar(this.wheels[0], this.wheels[1], dt, _vUp);
+      this.applyAntiRollBar(this.wheels[2], this.wheels[3], dt, _vUp);
     }
 
     // Active Upright Roll Stabilization Assist: Damp extreme roll when leaning dangerously (> 26 deg / 0.45 rad)
