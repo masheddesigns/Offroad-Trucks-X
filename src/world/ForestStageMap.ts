@@ -290,9 +290,9 @@ export class ForestStageMap {
     const ghibliLushGrass = new THREE.Color(0x56a635);
     const ghibliDeepForest = new THREE.Color(0x285922);
     const ghibliChartreuse = new THREE.Color(0x7ac242);
-    const ghibliTrailOchre = new THREE.Color(0xa66c42);  // Packed dry dirt trail
-    const ghibliTrailRut = new THREE.Color(0x6b3f23);    // Wet compressed mud rut
-    const ghibliMudBog = new THREE.Color(0x422919);      // Thick muddy clay
+    const ghibliTrailOchre = new THREE.Color(0xd4a373);  // Sunlit warm sand/gravel dirt trail
+    const ghibliTrailRut = new THREE.Color(0x9c6644);    // Packed loam rut
+    const ghibliMudBog = new THREE.Color(0x5a3d28);      // Muddy clay
     const ghibliGranite = new THREE.Color(0x767882);
     const ghibliServicePad = new THREE.Color(0x3a4249);
 

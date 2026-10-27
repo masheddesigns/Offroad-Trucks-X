@@ -29,10 +29,10 @@ export interface LiveryPalette {
 }
 
 export const LIVERY_PRESETS: Record<TruckLivery, LiveryPalette> = {
-  RED: { body: 0xd31212, fill: 0xb51010, trim: 0x181818, rollCage: 0xd31212, rims: 0xd99518 },      // Satin Dakar Gold rims
-  BLUE: { body: 0x0a60dd, fill: 0x084cb2, trim: 0x141414, rollCage: 0x0a60dd, rims: 0xe5a920 },    // Kamaz-Master Golden Rally Rims
-  GOLD: { body: 0xd4a017, fill: 0xb8860b, trim: 0x181818, rollCage: 0xd4a017, rims: 0x222222 },    // Matte Black beadlocks
-  BLACK: { body: 0x1e1e1e, fill: 0x141414, trim: 0xaa1111, rollCage: 0xcc1111, rims: 0xd31212 }     // Crimson Red racing rims
+  RED: { body: 0xd31212, fill: 0xb51010, trim: 0x181818, rollCage: 0xd31212, rims: 0xffaa00 },      // Radiant 24K Dakar Gold rims
+  BLUE: { body: 0x0a60dd, fill: 0x084cb2, trim: 0x141414, rollCage: 0x0a60dd, rims: 0xffd100 },    // Kamaz-Master Golden Yellow rims
+  GOLD: { body: 0xd4a017, fill: 0xb8860b, trim: 0x181818, rollCage: 0xd4a017, rims: 0x181818 },    // Matte Black beadlocks
+  BLACK: { body: 0x1e1e1e, fill: 0x141414, trim: 0xaa1111, rollCage: 0xcc1111, rims: 0xff1e27 }     // Vivid Crimson Red racing rims
 };
 
 export class GLTFTruckModel {
@@ -49,6 +49,12 @@ export class GLTFTruckModel {
   public customRimColorIndex: number = 0;
   public isMazDakar: boolean = false;
   public currentLivery: TruckLivery = 'RED';
+
+  // Physical rally road lights
+  public leftHeadlight: THREE.SpotLight | null = null;
+  public rightHeadlight: THREE.SpotLight | null = null;
+  public roofLightbar: THREE.SpotLight | null = null;
+  public bumperFillLight: THREE.PointLight | null = null;
 
   constructor() {
     this.group = new THREE.Group();
@@ -74,6 +80,8 @@ export class GLTFTruckModel {
         // Fallback generic hierarchy
         this.setupGenericModel(root);
       }
+
+      this.setupHeadlights(root);
 
       this.chassisMesh = root;
       this.group.add(this.chassisMesh);
@@ -184,13 +192,14 @@ export class GLTFTruckModel {
             mat.color.setHex(0xf5f5f5); // Pearl white helmet with gloss
             mat.roughness = 0.2;
           }
-          // 10. Wheel Rims (Anthracite / Beadlock Satin Finish)
+          // 10. Wheel Rims (High Contrast Metallic Finish)
           else if (matName.includes('wheels')) {
             rimsMesh = mesh;
             this.rimMaterials.push(mat);
-            mat.roughness = 0.28;
-            mat.metalness = 0.75;
-            mat.envMapIntensity = 2.0;
+            mat.map = null; // Unbind dark 12% grey baked texture so colors render vibrantly
+            mat.roughness = 0.16;
+            mat.metalness = 0.88;
+            mat.envMapIntensity = 2.8;
           }
           // 11. Heavy Rally Tires (BFGoodrich Mud-Terrain T/A Dakar Livery)
           else if (matName.includes('banda') || matName.includes('tyre')) {
@@ -414,23 +423,26 @@ export class GLTFTruckModel {
 
     const rimColor = this.getCuratedRimColor();
     for (const mat of this.rimMaterials) {
+      mat.map = null; // Guarantee pure color without dark texture suppression
       mat.color.setHex(rimColor);
-      mat.roughness = 0.28;
-      mat.metalness = 0.75;
-      mat.envMapIntensity = 2.0;
+      mat.roughness = 0.16;
+      mat.metalness = 0.88;
+      mat.envMapIntensity = 2.8;
       mat.needsUpdate = true;
     }
     console.log(`[GLTFTruckModel] Applied Dakar livery: ${livery} (Rims: #${rimColor.toString(16)})`);
   }
 
   public static readonly RIM_OPTIONS = [
-    { name: 'Livery Match', color: -1 },
-    { name: 'Dakar Gold', color: 0xd99518 },
-    { name: 'Rally Red', color: 0xd31212 },
-    { name: 'Forged White', color: 0xf0f0f0 },
-    { name: 'Electric Blue', color: 0x0a60dd },
-    { name: 'Gunmetal Bronze', color: 0x8a6225 },
-    { name: 'Stealth Black', color: 0x222222 }
+    { name: 'Dakar 24K Gold', color: 0xffaa00 },
+    { name: 'Rally Crimson Red', color: 0xff1e27 },
+    { name: 'Forged Polar White', color: 0xffffff },
+    { name: 'Electric Cyan Blue', color: 0x00d2ff },
+    { name: 'Neon Dakar Orange', color: 0xff6600 },
+    { name: 'Volt Lime Green', color: 0x76ff03 },
+    { name: 'Mirror Chrome', color: 0xdde5ed },
+    { name: 'Bronze Gold', color: 0xb5822a },
+    { name: 'Stealth Black', color: 0x181818 }
   ];
 
   public getCuratedRimColor(): number {
@@ -445,11 +457,52 @@ export class GLTFTruckModel {
     this.customRimColorIndex = (this.customRimColorIndex + 1) % GLTFTruckModel.RIM_OPTIONS.length;
     const rimColor = this.getCuratedRimColor();
     for (const mat of this.rimMaterials) {
+      mat.map = null;
       mat.color.setHex(rimColor);
+      mat.roughness = 0.16;
+      mat.metalness = 0.88;
+      mat.envMapIntensity = 2.8;
       mat.needsUpdate = true;
     }
     const opt = GLTFTruckModel.RIM_OPTIONS[this.customRimColorIndex];
     return opt.name;
+  }
+
+  /**
+   * High-output Dakar rally headlights and roof lightbar for illuminating off-road trails
+   */
+  private setupHeadlights(chassis: THREE.Object3D) {
+    // 1. Dual High-Power Rally Spotlights at Bumper Height
+    this.leftHeadlight = new THREE.SpotLight(0xfffaee, 45.0, 110, Math.PI / 6.5, 0.45, 1.3);
+    this.leftHeadlight.position.set(-0.85, 1.25, 3.2);
+    const leftTarget = new THREE.Object3D();
+    leftTarget.position.set(-0.4, 0.1, 55.0);
+    this.leftHeadlight.target = leftTarget;
+
+    this.rightHeadlight = new THREE.SpotLight(0xfffaee, 45.0, 110, Math.PI / 6.5, 0.45, 1.3);
+    this.rightHeadlight.position.set(0.85, 1.25, 3.2);
+    const rightTarget = new THREE.Object3D();
+    rightTarget.position.set(0.4, 0.1, 55.0);
+    this.rightHeadlight.target = rightTarget;
+
+    // 2. Wide-Beam Roof LED Lightbar (Floods the trail 10m - 70m ahead)
+    this.roofLightbar = new THREE.SpotLight(0xf0f8ff, 32.0, 85, Math.PI / 4.8, 0.55, 1.2);
+    this.roofLightbar.position.set(0, 2.75, 1.4);
+    const roofTarget = new THREE.Object3D();
+    roofTarget.position.set(0, -0.2, 40.0);
+    this.roofLightbar.target = roofTarget;
+
+    // 3. Ground Carpet Fill Light (Brightens immediately ahead of front bumper)
+    this.bumperFillLight = new THREE.PointLight(0xffeedd, 9.0, 22.0, 1.2);
+    this.bumperFillLight.position.set(0, 1.15, 3.4);
+
+    chassis.add(this.leftHeadlight);
+    chassis.add(leftTarget);
+    chassis.add(this.rightHeadlight);
+    chassis.add(rightTarget);
+    chassis.add(this.roofLightbar);
+    chassis.add(roofTarget);
+    chassis.add(this.bumperFillLight);
   }
 
   public cycleLivery(): TruckLivery {

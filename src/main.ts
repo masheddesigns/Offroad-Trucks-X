@@ -71,7 +71,7 @@ class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.toneMappingExposure = 1.22;
 
     // 2. Scene & Atmosphere (Physically-based Nishita Sky, IBL Reflections & Lighting)
     this.scene = new THREE.Scene();

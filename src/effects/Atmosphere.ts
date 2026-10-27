@@ -56,13 +56,13 @@ export class Atmosphere {
     scene.fog = new THREE.FogExp2(0xa6cee2, 0.0018);
 
     // 3. Sun Position & Golden Anime Sunlight
-    const elevation = 32;
+    const elevation = 38;
     const azimuth = 135;
     const phi = THREE.MathUtils.degToRad(90 - elevation);
     const theta = THREE.MathUtils.degToRad(azimuth);
     this.sunPosition.setFromSphericalCoords(1, phi, theta);
 
-    this.sunLight = new THREE.DirectionalLight(0xfff5dd, 2.5);
+    this.sunLight = new THREE.DirectionalLight(0xfff8e8, 3.2);
     this.sunLight.position.copy(this.sunPosition).multiplyScalar(200);
     this.sunLight.castShadow = true;
     this.sunLight.shadow.mapSize.width = 2048;
@@ -79,8 +79,8 @@ export class Atmosphere {
     this.sunLight.shadow.normalBias = 0.025;
     scene.add(this.sunLight);
 
-    // 4. Ambient Fill Light (Blue anime sky above, warm lush meadow green below)
-    this.hemiLight = new THREE.HemisphereLight(0xcde6f7, 0x364a2b, 1.25);
+    // 4. Ambient Fill Light (Blue sky above, luminous meadow & gravel bounce below)
+    this.hemiLight = new THREE.HemisphereLight(0xdcf0ff, 0x6e885c, 1.85);
     scene.add(this.hemiLight);
 
     // 5. Studio Ghibli Billowing Cumulus Clouds

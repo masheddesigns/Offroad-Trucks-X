@@ -69,16 +69,16 @@ const GhibliCelShader = {
       // Soft cel lighting ramp: shadow -> midtone -> sunlit highlight
       float celFactor;
       if (luma < 0.28) {
-        // Cool ambient shadow band
-        celFactor = 0.74;
+        // Soft ambient shadow band (preserves road & texture clarity)
+        celFactor = mix(0.88, 1.0, smoothstep(0.0, 0.28, luma));
       } else if (luma < 0.65) {
         // Rich vibrant midtone band
         float t = (luma - 0.28) / 0.37;
-        celFactor = mix(0.74, 1.0, smoothstep(0.0, 1.0, t));
+        celFactor = mix(1.0, 1.08, smoothstep(0.0, 1.0, t));
       } else {
         // Golden sunlit highlight band
         float t = (luma - 0.65) / 0.35;
-        celFactor = mix(1.0, 1.14, smoothstep(0.0, 1.0, t));
+        celFactor = mix(1.08, 1.15, smoothstep(0.0, 1.0, t));
       }
       color *= celFactor;
 
