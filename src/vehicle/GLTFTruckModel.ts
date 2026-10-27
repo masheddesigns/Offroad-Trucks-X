@@ -39,9 +39,10 @@ export class GLTFTruckModel {
   public chassisMesh: THREE.Object3D | null = null;
   public wheelNodes: WheelNode[] = [];
   public opticsMaterial: THREE.MeshStandardMaterial | null = null;
-  public bodyMaterial: THREE.MeshStandardMaterial | null = null;
-  public fillMaterial: THREE.MeshStandardMaterial | null = null;
-  public trimMaterial: THREE.MeshStandardMaterial | null = null;
+  public bodyMaterials: THREE.MeshStandardMaterial[] = [];
+  public fillMaterials: THREE.MeshStandardMaterial[] = [];
+  public trimMaterials: THREE.MeshStandardMaterial[] = [];
+  public rollCageMaterials: THREE.MeshStandardMaterial[] = [];
   public isMazDakar: boolean = false;
   public currentLivery: TruckLivery = 'RED';
 
@@ -56,13 +57,11 @@ export class GLTFTruckModel {
       const gltf = await loader.loadAsync(path);
       const root = gltf.scene;
 
-      // Detect MAZ-6440RR Dakar Model
-      let mazRoot: THREE.Object3D | null = null;
-      root.traverse((node) => {
-        if (node.name.toLowerCase().includes('maz_6440rr')) {
-          mazRoot = node;
-        }
-      });
+      // Detect MAZ-6440RR Dakar Model: find the exact parent Group 'maz_6440rr'
+      const mazRoot =
+        root.getObjectByName('maz_6440rr') ||
+        root.children.find((c) => c.name.toLowerCase() === 'maz_6440rr') ||
+        root.children[0];
 
       if (mazRoot) {
         this.isMazDakar = true;
@@ -95,6 +94,11 @@ export class GLTFTruckModel {
     let rimsMesh: THREE.Mesh | null = null;
     let tiresMesh: THREE.Mesh | null = null;
 
+    this.bodyMaterials = [];
+    this.fillMaterials = [];
+    this.trimMaterials = [];
+    this.rollCageMaterials = [];
+
     mazGroup.traverse((node) => {
       if ((node as THREE.Mesh).isMesh) {
         const mesh = node as THREE.Mesh;
@@ -120,31 +124,31 @@ export class GLTFTruckModel {
           }
           // 3. Main Cab Body & Hood (Iconic Dakar Rally Livery)
           else if (matName.includes('body')) {
-            this.bodyMaterial = mat;
-            mat.color.setHex(LIVERY_PRESETS[this.currentLivery].body);
+            this.bodyMaterials.push(mat);
+            mat.map = null; // Unbind clamped grey template texture for pure, rich automotive paint
             mat.roughness = 0.28;
             mat.metalness = 0.18;
             mat.envMapIntensity = 1.7;
           }
           // 4. Rear Cargo Box Panels & Side Sponsons
           else if (matName.includes('fill') && !matName.includes('fillextra')) {
-            this.fillMaterial = mat;
-            mat.color.setHex(LIVERY_PRESETS[this.currentLivery].fill);
+            this.fillMaterials.push(mat);
+            mat.map = null;
             mat.roughness = 0.32;
             mat.metalness = 0.15;
             mat.envMapIntensity = 1.5;
           }
           // 5. Roof Snorkel, Wing, Air Scoops & Aero Trim
           else if (matName.includes('fillextra')) {
-            this.trimMaterial = mat;
-            mat.color.setHex(LIVERY_PRESETS[this.currentLivery].trim);
+            this.trimMaterials.push(mat);
+            mat.map = null;
             mat.roughness = 0.42;
             mat.metalness = 0.15;
             mat.envMapIntensity = 1.3;
           }
           // 6. Side Armor, Tow Hooks & Mudflaps
           else if (matName.includes('dssolid')) {
-            mat.color.setHex(0x222222);
+            this.trimMaterials.push(mat);
             mat.roughness = 0.55;
             mat.metalness = 0.45;
           }
@@ -156,7 +160,7 @@ export class GLTFTruckModel {
           }
           // 8. Cockpit Roll Cage & Racing Seats
           else if (matName.includes('interiorlod0')) {
-            mat.color.setHex(LIVERY_PRESETS[this.currentLivery].rollCage);
+            this.rollCageMaterials.push(mat);
             mat.roughness = 0.35;
           }
           // 9. Driver Racing Suit & Helmet
@@ -184,6 +188,9 @@ export class GLTFTruckModel {
         }
       }
     });
+
+    // Apply the active livery color scheme to all collected parts immediately
+    this.setLivery(this.currentLivery);
 
     // 4 Wheels Configuration: Front Left/Right, Rear Left/Right
     // Coordinates in MAZ local space (Blender coords: X lateral, Y longitudinal, Z vertical)
@@ -359,18 +366,23 @@ export class GLTFTruckModel {
   public setLivery(livery: TruckLivery) {
     this.currentLivery = livery;
     const p = LIVERY_PRESETS[livery];
-    if (this.bodyMaterial) {
-      this.bodyMaterial.color.setHex(p.body);
-      this.bodyMaterial.needsUpdate = true;
+    for (const mat of this.bodyMaterials) {
+      mat.color.setHex(p.body);
+      mat.needsUpdate = true;
     }
-    if (this.fillMaterial) {
-      this.fillMaterial.color.setHex(p.fill);
-      this.fillMaterial.needsUpdate = true;
+    for (const mat of this.fillMaterials) {
+      mat.color.setHex(p.fill);
+      mat.needsUpdate = true;
     }
-    if (this.trimMaterial) {
-      this.trimMaterial.color.setHex(p.trim);
-      this.trimMaterial.needsUpdate = true;
+    for (const mat of this.trimMaterials) {
+      mat.color.setHex(p.trim);
+      mat.needsUpdate = true;
     }
+    for (const mat of this.rollCageMaterials) {
+      mat.color.setHex(p.rollCage);
+      mat.needsUpdate = true;
+    }
+    console.log(`[GLTFTruckModel] Applied livery: ${livery} (Body: #${p.body.toString(16)})`);
   }
 
   public cycleLivery(): TruckLivery {
