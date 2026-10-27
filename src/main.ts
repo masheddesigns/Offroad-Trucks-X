@@ -52,6 +52,8 @@ class Game {
   private hbBadgeEl = document.getElementById('hb-badge');
   private btnSound = document.getElementById('btn-sound');
   private soundLabelEl = document.getElementById('sound-label');
+  private btnPaint = document.getElementById('btn-paint');
+  private paintLabelEl = document.getElementById('paint-label');
 
   public async init() {
     const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
@@ -121,6 +123,9 @@ class Game {
     // Setup Sound Toggle UI
     this.setupAudioUI();
 
+    // Setup Livery Paint UI
+    this.setupPaintUI();
+
     // Setup Tab Focus / Visibility Handler
     this.setupVisibilityHandler();
 
@@ -147,6 +152,33 @@ class Game {
       this.dakarAudio.toggleMute();
       this.audio.toggleMute();
       updateSoundLabel();
+    });
+  }
+
+  private setupPaintUI() {
+    const updatePaintLabel = () => {
+      if (this.paintLabelEl) {
+        const labels: Record<string, string> = {
+          RED: 'MAZ Red',
+          BLUE: 'Kamaz Blue',
+          GOLD: 'Desert Gold',
+          BLACK: 'Stealth Black'
+        };
+        this.paintLabelEl.textContent = labels[this.gltfTruckModel.currentLivery] || 'MAZ Red';
+      }
+    };
+
+    this.btnPaint?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.gltfTruckModel.cycleLivery();
+      updatePaintLabel();
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyP') {
+        this.gltfTruckModel.cycleLivery();
+        updatePaintLabel();
+      }
     });
   }
 

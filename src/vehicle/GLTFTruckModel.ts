@@ -17,13 +17,33 @@ const _steerAxis = new THREE.Vector3(0, 0, 1); // In MAZ local coordinates, Z is
 const _spinQuat = new THREE.Quaternion();
 const _steerQuat = new THREE.Quaternion();
 
+export type TruckLivery = 'RED' | 'BLUE' | 'GOLD' | 'BLACK';
+
+export interface LiveryPalette {
+  body: number;
+  fill: number;
+  trim: number;
+  rollCage: number;
+}
+
+export const LIVERY_PRESETS: Record<TruckLivery, LiveryPalette> = {
+  RED: { body: 0xd31212, fill: 0xb51010, trim: 0x181818, rollCage: 0xd31212 },      // Iconic MAZ-SPORTauto Rally Red
+  BLUE: { body: 0x0a60dd, fill: 0x084cb2, trim: 0x141414, rollCage: 0x0a60dd },    // Iconic Kamaz-Master Blue
+  GOLD: { body: 0xd4a017, fill: 0xb8860b, trim: 0x181818, rollCage: 0xd4a017 },    // Desert Raid Gold
+  BLACK: { body: 0x1e1e1e, fill: 0x141414, trim: 0xaa1111, rollCage: 0xcc1111 }     // Stealth Carbon / Matte Black
+};
+
 export class GLTFTruckModel {
   public group: THREE.Group;
   public isLoaded: boolean = false;
   public chassisMesh: THREE.Object3D | null = null;
   public wheelNodes: WheelNode[] = [];
   public opticsMaterial: THREE.MeshStandardMaterial | null = null;
+  public bodyMaterial: THREE.MeshStandardMaterial | null = null;
+  public fillMaterial: THREE.MeshStandardMaterial | null = null;
+  public trimMaterial: THREE.MeshStandardMaterial | null = null;
   public isMazDakar: boolean = false;
+  public currentLivery: TruckLivery = 'RED';
 
   constructor() {
     this.group = new THREE.Group();
@@ -85,29 +105,79 @@ export class GLTFTruckModel {
           const mat = mesh.material as THREE.MeshStandardMaterial;
           const matName = mat.name.toLowerCase();
 
-          // 1. Optics & Headlights
+          // 1. Optics & Headlights / Taillights
           if (matName.includes('optics')) {
             this.opticsMaterial = mat;
-            mat.emissive = new THREE.Color(0xffeedd);
-            mat.emissiveIntensity = 1.6;
+            mat.emissive = new THREE.Color(0xfff0dd);
+            mat.emissiveIntensity = 2.4;
           }
           // 2. Windshield & Cabin Glass
           else if (matName.includes('glass')) {
             mat.transparent = true;
-            mat.opacity = 0.55;
-            mat.roughness = 0.08;
+            mat.opacity = 0.52;
+            mat.roughness = 0.05;
             mat.metalness = 0.9;
           }
-          // 3. Body Paint & Liveries
-          else if (matName.includes('body') || matName.includes('fill')) {
-            mat.roughness = Math.min(mat.roughness, 0.45);
-            mat.envMapIntensity = 1.4;
+          // 3. Main Cab Body & Hood (Iconic Dakar Rally Livery)
+          else if (matName.includes('body')) {
+            this.bodyMaterial = mat;
+            mat.color.setHex(LIVERY_PRESETS[this.currentLivery].body);
+            mat.roughness = 0.28;
+            mat.metalness = 0.18;
+            mat.envMapIntensity = 1.7;
           }
-          // 4. Identify Rims & Tires for dynamic wheel splitting
+          // 4. Rear Cargo Box Panels & Side Sponsons
+          else if (matName.includes('fill') && !matName.includes('fillextra')) {
+            this.fillMaterial = mat;
+            mat.color.setHex(LIVERY_PRESETS[this.currentLivery].fill);
+            mat.roughness = 0.32;
+            mat.metalness = 0.15;
+            mat.envMapIntensity = 1.5;
+          }
+          // 5. Roof Snorkel, Wing, Air Scoops & Aero Trim
+          else if (matName.includes('fillextra')) {
+            this.trimMaterial = mat;
+            mat.color.setHex(LIVERY_PRESETS[this.currentLivery].trim);
+            mat.roughness = 0.42;
+            mat.metalness = 0.15;
+            mat.envMapIntensity = 1.3;
+          }
+          // 6. Side Armor, Tow Hooks & Mudflaps
+          else if (matName.includes('dssolid')) {
+            mat.color.setHex(0x222222);
+            mat.roughness = 0.55;
+            mat.metalness = 0.45;
+          }
+          // 7. Chassis Mechanics & Front Grille
+          else if (matName.includes('mechanics')) {
+            mat.color.setHex(0x282828);
+            mat.roughness = 0.45;
+            mat.metalness = 0.65;
+          }
+          // 8. Cockpit Roll Cage & Racing Seats
+          else if (matName.includes('interiorlod0')) {
+            mat.color.setHex(LIVERY_PRESETS[this.currentLivery].rollCage);
+            mat.roughness = 0.35;
+          }
+          // 9. Driver Racing Suit & Helmet
+          else if (matName.includes('driversuit')) {
+            mat.color.setHex(0xc01010); // Red Dakar racing suit
+          } else if (matName.includes('helmet')) {
+            mat.color.setHex(0xf5f5f5); // Pearl white helmet with gloss
+            mat.roughness = 0.2;
+          }
+          // 10. Wheel Rims (Anthracite / Beadlock Satin Finish)
           else if (matName.includes('wheels')) {
             rimsMesh = mesh;
-          } else if (matName.includes('banda') || matName.includes('tyre')) {
+            mat.color.setHex(0x262626);
+            mat.roughness = 0.35;
+            mat.metalness = 0.45;
+          }
+          // 11. Heavy Rally Tires (Deep Matte Black Rubber)
+          else if (matName.includes('banda') || matName.includes('tyre')) {
             tiresMesh = mesh;
+            mat.color.setHex(0x1a1a1a);
+            mat.roughness = 0.85;
           }
 
           mat.needsUpdate = true;
@@ -284,5 +354,29 @@ export class GLTFTruckModel {
         wn.group.quaternion.copy(_spinQuat);
       }
     }
+  }
+
+  public setLivery(livery: TruckLivery) {
+    this.currentLivery = livery;
+    const p = LIVERY_PRESETS[livery];
+    if (this.bodyMaterial) {
+      this.bodyMaterial.color.setHex(p.body);
+      this.bodyMaterial.needsUpdate = true;
+    }
+    if (this.fillMaterial) {
+      this.fillMaterial.color.setHex(p.fill);
+      this.fillMaterial.needsUpdate = true;
+    }
+    if (this.trimMaterial) {
+      this.trimMaterial.color.setHex(p.trim);
+      this.trimMaterial.needsUpdate = true;
+    }
+  }
+
+  public cycleLivery(): TruckLivery {
+    const list: TruckLivery[] = ['RED', 'BLUE', 'GOLD', 'BLACK'];
+    const nextIdx = (list.indexOf(this.currentLivery) + 1) % list.length;
+    this.setLivery(list[nextIdx]);
+    return this.currentLivery;
   }
 }
