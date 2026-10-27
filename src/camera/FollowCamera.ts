@@ -3,6 +3,15 @@ import { RaycastVehicle } from '../vehicle/RaycastVehicle';
 
 export type CameraMode = 'CHASE' | 'HOOD' | 'LOW';
 
+// Reusable scratch objects to eliminate GC allocations
+const _cPos = new THREE.Vector3();
+const _cQuat = new THREE.Quaternion();
+const _fwd = new THREE.Vector3();
+const _up = new THREE.Vector3();
+const _vehicleEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+const _lookTarget = new THREE.Vector3();
+const _camOffset = new THREE.Vector3();
+
 export class FollowCamera {
   public camera: THREE.PerspectiveCamera;
   public mode: CameraMode = 'CHASE';
@@ -91,22 +100,21 @@ export class FollowCamera {
     const chassisTrans = vehicle.chassisBody.translation();
     const chassisRot = vehicle.chassisBody.rotation();
 
-    const cPos = new THREE.Vector3(chassisTrans.x, chassisTrans.y, chassisTrans.z);
-    const cQuat = new THREE.Quaternion(chassisRot.x, chassisRot.y, chassisRot.z, chassisRot.w);
+    _cPos.set(chassisTrans.x, chassisTrans.y, chassisTrans.z);
+    _cQuat.set(chassisRot.x, chassisRot.y, chassisRot.z, chassisRot.w);
 
-    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(cQuat);
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cQuat);
+    _fwd.set(0, 0, 1).applyQuaternion(_cQuat);
+    _up.set(0, 1, 0).applyQuaternion(_cQuat);
 
     // Calculate vehicle yaw angle around Y axis
-    const vehicleEuler = new THREE.Euler().setFromQuaternion(cQuat, 'YXZ');
-    const vehicleYaw = vehicleEuler.y;
+    _vehicleEuler.setFromQuaternion(_cQuat, 'YXZ');
+    const vehicleYaw = _vehicleEuler.y;
 
     if (this.mode === 'CHASE') {
       // Inactivity counter for auto-centering behind vehicle when driving
       if (!this.isDragging) {
         this.userInactiveTime += dt;
         if (this.userInactiveTime > this.autoRealignDelay && vehicle.speedKmh > 3.0) {
-          // Smoothly realign orbitYaw back to 0 (directly behind vehicle)
           const realignSpeed = Math.min(1.0, dt * 2.5);
           this.orbitYaw = THREE.MathUtils.lerp(this.orbitYaw, 0, realignSpeed);
         }
@@ -115,42 +123,40 @@ export class FollowCamera {
       // Combine vehicle heading with free mouse orbit
       const combinedYaw = vehicleYaw + this.orbitYaw;
 
-      // Calculate camera position in spherical coordinates around vehicle center
-      const lookTarget = cPos.clone().add(new THREE.Vector3(0, 1.4, 0));
+      _lookTarget.set(_cPos.x, _cPos.y + 1.4, _cPos.z);
       const horizDist = this.distance * Math.cos(this.orbitPitch);
       const vertDist = this.distance * Math.sin(this.orbitPitch);
 
       this.targetPosition.set(
-        cPos.x - Math.sin(combinedYaw) * horizDist,
-        cPos.y + 1.4 + vertDist,
-        cPos.z - Math.cos(combinedYaw) * horizDist
+        _cPos.x - Math.sin(combinedYaw) * horizDist,
+        _cPos.y + 1.4 + vertDist,
+        _cPos.z - Math.cos(combinedYaw) * horizDist
       );
 
       // Smooth camera interpolation
       const posLerp = Math.min(1.0, dt * 8.0);
       this.currentPosition.lerp(this.targetPosition, posLerp);
-      this.currentLookAt.lerp(lookTarget, posLerp);
+      this.currentLookAt.lerp(_lookTarget, posLerp);
 
       this.camera.position.copy(this.currentPosition);
       this.camera.lookAt(this.currentLookAt);
 
     } else if (this.mode === 'HOOD') {
       // Driver / Roof perspective
-      const hoodOffset = new THREE.Vector3(0, 1.8, 1.2).applyQuaternion(cQuat);
-      this.camera.position.copy(cPos).add(hoodOffset);
-      const hoodLookAt = cPos.clone().add(fwd.clone().multiplyScalar(25)).add(up.clone().multiplyScalar(0.4));
-      this.camera.lookAt(hoodLookAt);
+      _camOffset.set(0, 1.8, 1.2).applyQuaternion(_cQuat);
+      this.camera.position.copy(_cPos).add(_camOffset);
+      _lookTarget.copy(_cPos).addScaledVector(_fwd, 25).addScaledVector(_up, 0.4);
+      this.camera.lookAt(_lookTarget);
 
     } else if (this.mode === 'LOW') {
       // Low angle cinematic bumper
-      const lowOffset = new THREE.Vector3(0, 1.0, -7.5).applyQuaternion(cQuat);
-      this.targetPosition.copy(cPos).add(lowOffset);
-      const lowLookAt = cPos.clone().add(fwd.clone().multiplyScalar(6));
-
-      const lerpSpeed = Math.min(1.0, dt * 10.0);
-      this.currentPosition.lerp(this.targetPosition, lerpSpeed);
+      _camOffset.set(0, 1.0, -7.5).applyQuaternion(_cQuat);
+      this.targetPosition.copy(_cPos).add(_camOffset);
+      _lookTarget.copy(_cPos).addScaledVector(_fwd, 6);
+      this.currentPosition.lerp(this.targetPosition, Math.min(1.0, dt * 10.0));
+      this.currentLookAt.lerp(_lookTarget, Math.min(1.0, dt * 10.0));
       this.camera.position.copy(this.currentPosition);
-      this.camera.lookAt(lowLookAt);
+      this.camera.lookAt(this.currentLookAt);
     }
   }
 

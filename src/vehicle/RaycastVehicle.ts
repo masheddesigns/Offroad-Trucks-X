@@ -27,6 +27,40 @@ export interface WheelState {
   surfaceType?: string;
 }
 
+// Pre-allocated static scratch objects to guarantee ZERO garbage-collection churn during physics
+const _chPos = new THREE.Vector3();
+const _chQuat = new THREE.Quaternion();
+const _linVel = new THREE.Vector3();
+const _angVel = new THREE.Vector3();
+const _vFwd = new THREE.Vector3();
+const _vUp = new THREE.Vector3();
+const _vRight = new THREE.Vector3();
+const _rayDir = new THREE.Vector3();
+const _hardpoint = new THREE.Vector3();
+const _rContact = new THREE.Vector3();
+const _pointVel = new THREE.Vector3();
+const _angCross = new THREE.Vector3();
+const _suspImpulse = new THREE.Vector3();
+const _wheelSteerQuat = new THREE.Quaternion();
+const _wheelLocalQuat = new THREE.Quaternion();
+const _wheelFwd = new THREE.Vector3();
+const _wheelRight = new THREE.Vector3();
+const _driveImpulse = new THREE.Vector3();
+const _dragImpulse = new THREE.Vector3();
+const _brakeImpulse = new THREE.Vector3();
+const _latImpulse = new THREE.Vector3();
+const _antiRollImpulseL = new THREE.Vector3();
+const _antiRollImpulseR = new THREE.Vector3();
+const _parkImpulse = new THREE.Vector3();
+const _rollCorrectionAxis = new THREE.Vector3();
+const _rollDampTorque = new THREE.Vector3();
+const _rightingTorque = new THREE.Vector3();
+const _rightingImpulse = new THREE.Vector3();
+const _yAxis = new THREE.Vector3(0, 1, 0);
+const _zAxis = new THREE.Vector3(0, 0, 1);
+const _xAxis = new THREE.Vector3(1, 0, 0);
+const _worldUp = new THREE.Vector3(0, 1, 0);
+
 export class RaycastVehicle {
   public chassisBody: RAPIER.RigidBody;
   public chassisCollider: RAPIER.Collider;
@@ -195,18 +229,18 @@ export class RaycastVehicle {
     const linvelRaw = this.chassisBody.linvel();
     const angvelRaw = this.chassisBody.angvel();
 
-    const chassisPos = new THREE.Vector3(chassisPosRaw.x, chassisPosRaw.y, chassisPosRaw.z);
-    const chassisQuat = new THREE.Quaternion(chassisRotRaw.x, chassisRotRaw.y, chassisRotRaw.z, chassisRotRaw.w);
-    const linearVelocity = new THREE.Vector3(linvelRaw.x, linvelRaw.y, linvelRaw.z);
-    const angularVelocity = new THREE.Vector3(angvelRaw.x, angvelRaw.y, angvelRaw.z);
+    _chPos.set(chassisPosRaw.x, chassisPosRaw.y, chassisPosRaw.z);
+    _chQuat.set(chassisRotRaw.x, chassisRotRaw.y, chassisRotRaw.z, chassisRotRaw.w);
+    _linVel.set(linvelRaw.x, linvelRaw.y, linvelRaw.z);
+    _angVel.set(angvelRaw.x, angvelRaw.y, angvelRaw.z);
 
     // Local Chassis Coordinate Directions
-    const vFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(chassisQuat);
-    const vUp = new THREE.Vector3(0, 1, 0).applyQuaternion(chassisQuat);
-    const vRight = new THREE.Vector3(1, 0, 0).applyQuaternion(chassisQuat);
+    _vFwd.copy(_zAxis).applyQuaternion(_chQuat);
+    _vUp.copy(_yAxis).applyQuaternion(_chQuat);
+    _vRight.copy(_xAxis).applyQuaternion(_chQuat);
 
     // Forward speed along heading
-    const forwardSpeed = linearVelocity.dot(vFwd);
+    const forwardSpeed = _linVel.dot(_vFwd);
     this.speedKmh = Math.abs(forwardSpeed) * 3.6;
 
     let totalWheelsGrounded = 0;
@@ -222,22 +256,18 @@ export class RaycastVehicle {
       const cfg = wheel.config;
 
       // Steering angle on front axle
-      if (cfg.isFront) {
-        wheel.steerAngle = this.currentSteer;
-      } else {
-        wheel.steerAngle = 0.0;
-      }
+      wheel.steerAngle = cfg.isFront ? this.currentSteer : 0.0;
 
       // Hardpoint in World Space
-      const hardpointWorld = cfg.localMountPoint.clone().applyQuaternion(chassisQuat).add(chassisPos);
+      _hardpoint.copy(cfg.localMountPoint).applyQuaternion(_chQuat).add(_chPos);
 
       // Downward raycast vector
-      const rayDir = vUp.clone().multiplyScalar(-1);
+      _rayDir.copy(_vUp).multiplyScalar(-1);
       const maxRayDist = cfg.suspensionRestLength + cfg.radius;
 
       const ray = new this.rapier.Ray(
-        { x: hardpointWorld.x, y: hardpointWorld.y, z: hardpointWorld.z },
-        { x: rayDir.x, y: rayDir.y, z: rayDir.z }
+        { x: _hardpoint.x, y: _hardpoint.y, z: _hardpoint.z },
+        { x: _rayDir.x, y: _rayDir.y, z: _rayDir.z }
       );
 
       const hit = this.world.castRayAndGetNormal(
@@ -264,16 +294,17 @@ export class RaycastVehicle {
 
         // Query ground surface properties under contact point
         const surf = surfaceQuery
-          ? surfaceQuery(hardpointWorld.x, hardpointWorld.z)
+          ? surfaceQuery(_hardpoint.x, _hardpoint.z)
           : { type: 'trail', friction: 0.98, rollingResistance: 0.05, depth: 0.0, bumpiness: 0.0 };
         wheel.surfaceType = surf.type;
 
         // Point velocity at contact
-        const rContact = hardpointWorld.clone().sub(chassisPos);
-        const pointVel = linearVelocity.clone().add(angularVelocity.clone().cross(rContact));
+        _rContact.copy(_hardpoint).sub(_chPos);
+        _angCross.copy(_angVel).cross(_rContact);
+        _pointVel.copy(_linVel).add(_angCross);
 
         // Suspension vertical velocity along chassis up
-        const vUpVel = pointVel.dot(vUp);
+        const vUpVel = _pointVel.dot(_vUp);
 
         // Correct physics spring + damper force:
         // When compressing (vUpVel < 0): adds upward resistance
@@ -284,22 +315,18 @@ export class RaycastVehicle {
         );
 
         // Apply upward spring impulse
-        const suspImpulse = vUp.clone().multiplyScalar(springForceMag * dt);
-        this.chassisBody.applyImpulseAtPoint(
-          { x: suspImpulse.x, y: suspImpulse.y, z: suspImpulse.z },
-          { x: hardpointWorld.x, y: hardpointWorld.y, z: hardpointWorld.z },
-          true
-        );
+        _suspImpulse.copy(_vUp).multiplyScalar(springForceMag * dt);
+        this.chassisBody.applyImpulseAtPoint(_suspImpulse, _hardpoint, true);
 
         // Tire Directions (Accounting for steering)
-        const wheelSteerQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), wheel.steerAngle);
-        const wheelLocalQuat = chassisQuat.clone().multiply(wheelSteerQuat);
-        const wheelFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(wheelLocalQuat);
-        const wheelRight = new THREE.Vector3(1, 0, 0).applyQuaternion(wheelLocalQuat);
+        _wheelSteerQuat.setFromAxisAngle(_yAxis, wheel.steerAngle);
+        _wheelLocalQuat.copy(_chQuat).multiply(_wheelSteerQuat);
+        _wheelFwd.copy(_zAxis).applyQuaternion(_wheelLocalQuat);
+        _wheelRight.copy(_xAxis).applyQuaternion(_wheelLocalQuat);
 
         // Forward and Lateral Speeds
-        const wheelFwdSpeed = pointVel.dot(wheelFwd);
-        const wheelLatSpeed = pointVel.dot(wheelRight);
+        const wheelFwdSpeed = _pointVel.dot(_wheelFwd);
+        const wheelLatSpeed = _pointVel.dot(_wheelRight);
 
         // Track handbrake state
         this.isHandbraking = input.handbrake;
@@ -311,26 +338,17 @@ export class RaycastVehicle {
         if (allowDrive && Math.abs(input.throttle) > 0.05) {
           const torqueShare = cfg.isFront ? 0.14 : 0.18;
           const driveForceMag = totalEngineThrust * torqueShare;
-          const driveImpulse = wheelFwd.clone().multiplyScalar(driveForceMag * dt);
-
-          this.chassisBody.applyImpulseAtPoint(
-            { x: driveImpulse.x, y: driveImpulse.y, z: driveImpulse.z },
-            { x: hardpointWorld.x, y: hardpointWorld.y, z: hardpointWorld.z },
-            true
-          );
+          _driveImpulse.copy(_wheelFwd).multiplyScalar(driveForceMag * dt);
+          this.chassisBody.applyImpulseAtPoint(_driveImpulse, _hardpoint, true);
         }
 
         // 2. Mud & Water Rolling Resistance / Viscous Drag
         if (surf.depth > 0.01) {
           const dragMag = surf.rollingResistance * 2400.0 * Math.abs(wheelFwdSpeed) * surf.depth;
-          const dragImpulse = wheelFwd.clone().multiplyScalar(
+          _dragImpulse.copy(_wheelFwd).multiplyScalar(
             -Math.sign(wheelFwdSpeed) * Math.min(dragMag * dt, 4500.0)
           );
-          this.chassisBody.applyImpulseAtPoint(
-            { x: dragImpulse.x, y: dragImpulse.y, z: dragImpulse.z },
-            { x: hardpointWorld.x, y: hardpointWorld.y, z: hardpointWorld.z },
-            true
-          );
+          this.chassisBody.applyImpulseAtPoint(_dragImpulse, _hardpoint, true);
         }
 
         // 3. Braking & Handbrake Lockup
@@ -341,31 +359,18 @@ export class RaycastVehicle {
           // Heavy rear 4-wheel lockup (initiates rally drift flick)
           const hbForce = 110000.0;
           const brakeImpulseMag = Math.min(Math.abs(wheelFwdSpeed) * 7500, hbForce * dt);
-          const brakeImpulse = wheelFwd.clone().multiplyScalar(-Math.sign(wheelFwdSpeed) * brakeImpulseMag);
-
-          this.chassisBody.applyImpulseAtPoint(
-            { x: brakeImpulse.x, y: brakeImpulse.y, z: brakeImpulse.z },
-            { x: hardpointWorld.x, y: hardpointWorld.y, z: hardpointWorld.z },
-            true
-          );
+          _brakeImpulse.copy(_wheelFwd).multiplyScalar(-Math.sign(wheelFwdSpeed) * brakeImpulseMag);
+          this.chassisBody.applyImpulseAtPoint(_brakeImpulse, _hardpoint, true);
 
           if (this.speedKmh < 3.0) {
-            const parkImpulse = linearVelocity.clone().multiplyScalar(-3000.0 * dt);
-            this.chassisBody.applyImpulse(
-              { x: parkImpulse.x, y: parkImpulse.y, z: parkImpulse.z },
-              true
-            );
+            _parkImpulse.copy(_linVel).multiplyScalar(-3000.0 * dt);
+            this.chassisBody.applyImpulse(_parkImpulse, true);
           }
         } else if (isFootBraking) {
           // Hydraulic 6-wheel service brakes
           const brakeImpulseMag = Math.min(Math.abs(wheelFwdSpeed) * 3500, this.brakeForce * dt);
-          const brakeImpulse = wheelFwd.clone().multiplyScalar(-Math.sign(wheelFwdSpeed) * brakeImpulseMag);
-
-          this.chassisBody.applyImpulseAtPoint(
-            { x: brakeImpulse.x, y: brakeImpulse.y, z: brakeImpulse.z },
-            { x: hardpointWorld.x, y: hardpointWorld.y, z: hardpointWorld.z },
-            true
-          );
+          _brakeImpulse.copy(_wheelFwd).multiplyScalar(-Math.sign(wheelFwdSpeed) * brakeImpulseMag);
+          this.chassisBody.applyImpulseAtPoint(_brakeImpulse, _hardpoint, true);
         }
 
         // 4. Pacejka Non-Linear Lateral Friction (Authentic Cornering Grip & Drift)
@@ -380,13 +385,8 @@ export class RaycastVehicle {
 
         const maxLateralGripForce = springForceMag * effectiveMu;
         const corneringForce = -Math.sign(slipAngle) * pacejkaGrip * maxLateralGripForce;
-        const lateralImpulse = wheelRight.clone().multiplyScalar(corneringForce * dt);
-
-        this.chassisBody.applyImpulseAtPoint(
-          { x: lateralImpulse.x, y: lateralImpulse.y, z: lateralImpulse.z },
-          { x: hardpointWorld.x, y: hardpointWorld.y, z: hardpointWorld.z },
-          true
-        );
+        _latImpulse.copy(_wheelRight).multiplyScalar(corneringForce * dt);
+        this.chassisBody.applyImpulseAtPoint(_latImpulse, _hardpoint, true);
 
         // Wheel Rotation (Freeze rear rotation when locked by handbrake)
         if (!isHandbrakingThisWheel) {
@@ -394,47 +394,46 @@ export class RaycastVehicle {
         }
 
         // Visual Wheel Position
-        wheel.worldPosition.copy(hardpointWorld).add(rayDir.clone().multiplyScalar(currentSuspLength));
-        wheel.worldRotation.copy(wheelLocalQuat);
+        wheel.worldPosition.copy(_hardpoint).addScaledVector(_rayDir, currentSuspLength);
+        wheel.worldRotation.copy(_wheelLocalQuat);
       } else {
         // Airborne wheel
         wheel.inContact = false;
         wheel.compression = 0;
         wheel.suspensionLength = cfg.suspensionRestLength;
-        wheel.worldPosition.copy(hardpointWorld).add(rayDir.clone().multiplyScalar(cfg.suspensionRestLength));
+        wheel.worldPosition.copy(_hardpoint).addScaledVector(_rayDir, cfg.suspensionRestLength);
 
-        const wheelSteerQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), wheel.steerAngle);
-        wheel.worldRotation.copy(chassisQuat.clone().multiply(wheelSteerQuat));
+        _wheelSteerQuat.setFromAxisAngle(_yAxis, wheel.steerAngle);
+        wheel.worldRotation.copy(_chQuat).multiply(_wheelSteerQuat);
       }
     }
 
     // Anti-Roll Bar simulation along local chassis up vector (Front, Mid, Rear Axles)
     if (this.wheels.length >= 6) {
-      this.applyAntiRollBar(this.wheels[0], this.wheels[1], dt, vUp);
-      this.applyAntiRollBar(this.wheels[2], this.wheels[3], dt, vUp);
-      this.applyAntiRollBar(this.wheels[4], this.wheels[5], dt, vUp);
+      this.applyAntiRollBar(this.wheels[0], this.wheels[1], dt, _vUp);
+      this.applyAntiRollBar(this.wheels[2], this.wheels[3], dt, _vUp);
+      this.applyAntiRollBar(this.wheels[4], this.wheels[5], dt, _vUp);
     }
 
     // Active Upright Roll Stabilization Assist: Damp extreme roll when leaning dangerously (> 26 deg / 0.45 rad)
-    const worldUp = new THREE.Vector3(0, 1, 0);
-    const tiltAngle = vUp.angleTo(worldUp);
+    const tiltAngle = _vUp.angleTo(_worldUp);
     if (tiltAngle > 0.45) {
-      const correctionAxis = new THREE.Vector3().crossVectors(vUp, worldUp).normalize();
+      _rollCorrectionAxis.crossVectors(_vUp, _worldUp).normalize();
       const angVel = this.chassisBody.angvel();
-      const rollDampTorque = new THREE.Vector3(angVel.x, angVel.y, angVel.z).multiplyScalar(-18000.0 * dt);
-      this.chassisBody.applyTorqueImpulse({ x: rollDampTorque.x, y: rollDampTorque.y, z: rollDampTorque.z }, true);
+      _rollDampTorque.set(angVel.x, angVel.y, angVel.z).multiplyScalar(-18000.0 * dt);
+      this.chassisBody.applyTorqueImpulse(_rollDampTorque, true);
 
       const rightingMag = Math.min((tiltAngle - 0.45) * 90000.0, 180000.0);
-      const torque = correctionAxis.multiplyScalar(rightingMag * dt);
-      this.chassisBody.applyTorqueImpulse({ x: torque.x, y: torque.y, z: torque.z }, true);
+      _rightingTorque.copy(_rollCorrectionAxis).multiplyScalar(rightingMag * dt);
+      this.chassisBody.applyTorqueImpulse(_rightingTorque, true);
     }
 
     // Auto-Recovery: If upside down or on side for more than 1 second, smoothly self-right
     if (tiltAngle > 1.15) {
       const angVel = this.chassisBody.angvel();
       this.chassisBody.setAngvel({ x: angVel.x * 0.85, y: angVel.y * 0.85, z: angVel.z * 0.85 }, true);
-      const rightingImpulse = new THREE.Vector3(0, 22000.0 * dt, 0);
-      this.chassisBody.applyImpulse({ x: rightingImpulse.x, y: rightingImpulse.y, z: rightingImpulse.z }, true);
+      _rightingImpulse.set(0, 22000.0 * dt, 0);
+      this.chassisBody.applyImpulse(_rightingImpulse, true);
     }
 
     // Airtime Tracker
@@ -456,19 +455,11 @@ export class RaycastVehicle {
     if (Math.abs(travelDiff) > 0.001) {
       // Level chassis: push heavily compressed wheel up (+vUp), pull extended wheel down (-vUp)
       const antiRollForce = Math.min(25000, Math.max(-25000, travelDiff * this.antiRollStiffness));
-      const impulseL = vUp.clone().multiplyScalar(antiRollForce * dt);
-      const impulseR = vUp.clone().multiplyScalar(-antiRollForce * dt);
+      _antiRollImpulseL.copy(vUp).multiplyScalar(antiRollForce * dt);
+      _antiRollImpulseR.copy(vUp).multiplyScalar(-antiRollForce * dt);
 
-      this.chassisBody.applyImpulseAtPoint(
-        { x: impulseL.x, y: impulseL.y, z: impulseL.z },
-        { x: wheelL.worldPosition.x, y: wheelL.worldPosition.y, z: wheelL.worldPosition.z },
-        true
-      );
-      this.chassisBody.applyImpulseAtPoint(
-        { x: impulseR.x, y: impulseR.y, z: impulseR.z },
-        { x: wheelR.worldPosition.x, y: wheelR.worldPosition.y, z: wheelR.worldPosition.z },
-        true
-      );
+      this.chassisBody.applyImpulseAtPoint(_antiRollImpulseL, wheelL.worldPosition, true);
+      this.chassisBody.applyImpulseAtPoint(_antiRollImpulseR, wheelR.worldPosition, true);
     }
   }
 

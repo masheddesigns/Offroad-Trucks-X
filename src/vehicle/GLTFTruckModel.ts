@@ -9,6 +9,14 @@ interface AxleNode {
   axleType: 'front' | 'mid' | 'rear';
 }
 
+// Reusable scratch objects to eliminate GC allocations
+const _truckChassisQuat = new THREE.Quaternion();
+const _truckLocalOffset = new THREE.Vector3();
+const _spinAxis = new THREE.Vector3(1, 0, 0);
+const _steerAxis = new THREE.Vector3(0, 1, 0);
+const _spinQuat = new THREE.Quaternion();
+const _steerQuat = new THREE.Quaternion();
+
 export class GLTFTruckModel {
   public group: THREE.Group;
   public isLoaded: boolean = false;
@@ -80,13 +88,12 @@ export class GLTFTruckModel {
     if (!this.isLoaded || !this.chassisMesh) return;
 
     // 1. Sync Chassis Body Position & Rotation with Physics
-    // Offset accounts for 6x6 axle symmetry and chassis center of mass
     const trans = vehicle.chassisBody.translation();
     const rot = vehicle.chassisBody.rotation();
-    const chassisQuat = new THREE.Quaternion(rot.x, rot.y, rot.z, rot.w);
-    const localOffset = new THREE.Vector3(-0.062, -1.32, 0.0).applyQuaternion(chassisQuat);
-    this.chassisMesh.position.set(trans.x + localOffset.x, trans.y + localOffset.y, trans.z + localOffset.z);
-    this.chassisMesh.quaternion.copy(chassisQuat);
+    _truckChassisQuat.set(rot.x, rot.y, rot.z, rot.w);
+    _truckLocalOffset.set(-0.062, -1.32, 0.0).applyQuaternion(_truckChassisQuat);
+    this.chassisMesh.position.set(trans.x + _truckLocalOffset.x, trans.y + _truckLocalOffset.y, trans.z + _truckLocalOffset.z);
+    this.chassisMesh.quaternion.copy(_truckChassisQuat);
 
     // 2. Headlight / Brakelight glow response
     if (this.bulbMaterial) {
@@ -144,15 +151,15 @@ export class GLTFTruckModel {
       axle.node.position.y = axle.initialPos.y + suspDelta;
 
       // Wheel Spin around local X axis
-      const spinQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), spinAngle);
+      _spinQuat.setFromAxisAngle(_spinAxis, spinAngle);
 
       if (axle.axleType === 'front') {
         // Front Axle Steers around Y axis and spins around X axis
-        const steerQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), vehicle.currentSteer);
-        axle.node.quaternion.copy(steerQuat).multiply(spinQuat).multiply(axle.initialQuat);
+        _steerQuat.setFromAxisAngle(_steerAxis, vehicle.currentSteer);
+        axle.node.quaternion.copy(_steerQuat).multiply(_spinQuat).multiply(axle.initialQuat);
       } else {
         // Rear Tandem Axles Spin around X axis
-        axle.node.quaternion.copy(spinQuat).multiply(axle.initialQuat);
+        axle.node.quaternion.copy(_spinQuat).multiply(axle.initialQuat);
       }
     }
   }

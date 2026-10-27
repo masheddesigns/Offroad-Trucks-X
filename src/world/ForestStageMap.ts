@@ -596,10 +596,14 @@ export class ForestStageMap {
       realDummy.updateMatrix();
       realMatrices.push(realDummy.matrix.clone());
 
-      const bodyDesc = this.rapier.RigidBodyDesc.fixed().setTranslation(x, groundY + 3.0 * baseScale, z);
-      const body = this.world.createRigidBody(bodyDesc);
-      const col = this.rapier.ColliderDesc.cylinder(3.5 * baseScale, 0.45 * baseScale);
-      this.world.createCollider(col, body);
+      // Only create Rapier physics colliders for reachable trees near the track or deep forest slalom
+      const isNearDrivableArea = trail.dist < 20.0 || (x > -90 && x < -35 && z > -90 && z < -40);
+      if (isNearDrivableArea) {
+        const bodyDesc = this.rapier.RigidBodyDesc.fixed().setTranslation(x, groundY + 3.0 * baseScale, z);
+        const body = this.world.createRigidBody(bodyDesc);
+        const col = this.rapier.ColliderDesc.cylinder(3.5 * baseScale, 0.45 * baseScale);
+        this.world.createCollider(col, body);
+      }
 
       placed++;
     }
@@ -637,9 +641,12 @@ export class ForestStageMap {
         });
 
         if (realTrunkGeo && realFoliageGeo && realTrunkMat && realFoliageMat) {
+          // Immediately release procedural placeholder memory from GPU & CPU
           this.mesh.remove(trunkMesh, foliageMesh);
           trunkMesh.geometry.dispose();
           foliageMesh.geometry.dispose();
+          trunkMat.dispose();
+          foliageMat.dispose();
 
           const folMatStd = realFoliageMat as THREE.MeshStandardMaterial;
           folMatStd.alphaTest = 0.22;

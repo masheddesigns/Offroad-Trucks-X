@@ -14,6 +14,13 @@ import { PostProcessingManager } from './effects/PostProcessing';
 import { StageTimer } from './gameplay/StageTimer';
 import { FuelSystem } from './gameplay/FuelSystem';
 
+// Pre-allocated reusable scratch vectors to eliminate garbage-collection churn
+const _truckVel = new THREE.Vector3();
+const _chassisQuat = new THREE.Quaternion();
+const _vRight = new THREE.Vector3();
+const _truckPos = new THREE.Vector3();
+const _landPos = new THREE.Vector3();
+
 class Game {
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
@@ -49,14 +56,14 @@ class Game {
   public async init() {
     const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 
-    // 1. Three.js Renderer Setup
+    // 1. Three.js Renderer Setup (Capped pixel ratio for low VRAM and flat memory footprint)
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
       powerPreference: 'high-performance'
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.0));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.35));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -157,7 +164,7 @@ class Game {
     const width = window.innerWidth;
     const height = window.innerHeight;
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.0));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.35));
     this.cameraController.handleResize(width / height);
     this.postProcessing.setSize(width, height);
   }
@@ -195,13 +202,13 @@ class Game {
       this.truckModel.update(this.vehicle, isBraking);
     }
 
-    // Calculate lateral slip for tire sounds & particles
+    // Zero-allocation telemetry vectors
     const chassisLinVel = this.vehicle.chassisBody.linvel();
-    const truckVel = new THREE.Vector3(chassisLinVel.x, chassisLinVel.y, chassisLinVel.z);
+    _truckVel.set(chassisLinVel.x, chassisLinVel.y, chassisLinVel.z);
     const chassisRot = this.vehicle.chassisBody.rotation();
-    const chassisQuat = new THREE.Quaternion(chassisRot.x, chassisRot.y, chassisRot.z, chassisRot.w);
-    const vRight = new THREE.Vector3(1, 0, 0).applyQuaternion(chassisQuat);
-    const lateralSlipSpeed = truckVel.dot(vRight);
+    _chassisQuat.set(chassisRot.x, chassisRot.y, chassisRot.z, chassisRot.w);
+    _vRight.set(1, 0, 0).applyQuaternion(_chassisQuat);
+    const lateralSlipSpeed = _truckVel.dot(_vRight);
 
     // Update Audio Systems with Vehicle Telemetry
     this.rallyAudio.update(dt, this.vehicle.speedKmh, inputState.throttle);
@@ -219,11 +226,11 @@ class Game {
 
     // Fuel & Petrol Station Proximity Check
     const trans = this.vehicle.chassisBody.translation();
-    const truckPos = new THREE.Vector3(trans.x, trans.y, trans.z);
+    _truckPos.set(trans.x, trans.y, trans.z);
 
     let isNearPump = false;
     for (const st of this.forestMap.gasStations) {
-      if (st.pos.distanceTo(truckPos) < st.radius) {
+      if (st.pos.distanceTo(_truckPos) < st.radius) {
         isNearPump = true;
         break;
       }
@@ -237,7 +244,7 @@ class Game {
     }
 
     // Dynamic Sunlight & Ghibli Sky & Cloud Animation
-    this.atmosphere.update(dt, truckPos);
+    this.atmosphere.update(dt, _truckPos);
 
     // Stage Timing System
     if (this.vehicle.speedKmh > 3.0 && !this.stageTimer.isRunning && !this.stageTimer.stageCompleted) {
@@ -247,9 +254,8 @@ class Game {
 
     // Heavy Landing Effects (Audio & Dust Burst)
     if (this.wasAirborne && !this.vehicle.isAirborne) {
-      const trans = this.vehicle.chassisBody.translation();
-      const landPos = new THREE.Vector3(trans.x, trans.y - 1.0, trans.z);
-      this.dust.emitLandingBurst(landPos, Math.max(1.0, this.vehicle.speedKmh / 50.0));
+      _landPos.set(trans.x, trans.y - 1.0, trans.z);
+      this.dust.emitLandingBurst(_landPos, Math.max(1.0, this.vehicle.speedKmh / 50.0));
     }
     this.wasAirborne = this.vehicle.isAirborne;
 
@@ -262,7 +268,7 @@ class Game {
           const w = this.vehicle.wheels[i];
           if (w.inContact) {
             const intensity = (this.vehicle.speedKmh / 80.0) + (this.vehicle.isHandbraking ? 1.0 : 0.0);
-            this.dust.emitWheelDust(w.worldPosition, truckVel, intensity, w.surfaceType);
+            this.dust.emitWheelDust(w.worldPosition, _truckVel, intensity, w.surfaceType);
           }
         }
       }
@@ -270,8 +276,8 @@ class Game {
       // Diesel exhaust soot from dual chrome stacks under throttle
       if (inputState.throttle > 0.08) {
         const tips = this.truckModel.getExhaustWorldPositions();
-        this.dust.emitExhaustSmoke(tips.left, truckVel, inputState.throttle);
-        this.dust.emitExhaustSmoke(tips.right, truckVel, inputState.throttle);
+        this.dust.emitExhaustSmoke(tips.left, _truckVel, inputState.throttle);
+        this.dust.emitExhaustSmoke(tips.right, _truckVel, inputState.throttle);
       }
     }
     this.dust.update(dt);

@@ -124,15 +124,25 @@ export class PostProcessingManager {
     const width = window.innerWidth;
     const height = window.innerHeight;
 
-    this.composer = new EffectComposer(renderer);
+    // Use HalfFloatType for 50% less RAM/VRAM usage while retaining full HDR precision
+    const renderTarget = new THREE.WebGLRenderTarget(width, height, {
+      type: THREE.HalfFloatType,
+      format: THREE.RGBAFormat,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      stencilBuffer: false,
+      depthBuffer: true
+    });
+
+    this.composer = new EffectComposer(renderer, renderTarget);
 
     // 1. Base Scene Render Pass
     const renderPass = new RenderPass(scene, camera);
     this.composer.addPass(renderPass);
 
-    // 2. Soft Anime Dreamy Bloom (Sun highlights & glowing lanterns)
-    const res = new THREE.Vector2(width, height);
-    this.bloomPass = new UnrealBloomPass(res, 0.35, 0.45, 1.15);
+    // 2. Soft Anime Dreamy Bloom (Rendered at half resolution to save 75% bloom VRAM)
+    const bloomRes = new THREE.Vector2(Math.floor(width * 0.5), Math.floor(height * 0.5));
+    this.bloomPass = new UnrealBloomPass(bloomRes, 0.35, 0.45, 1.15);
     this.composer.addPass(this.bloomPass);
 
     // 3. Studio Ghibli Cel Shading, Ink Outline & Watercolor Color Harmony Pass
@@ -147,7 +157,7 @@ export class PostProcessingManager {
 
   public setSize(width: number, height: number) {
     this.composer.setSize(width, height);
-    this.bloomPass.resolution.set(width, height);
+    this.bloomPass.resolution.set(Math.floor(width * 0.5), Math.floor(height * 0.5));
     if (this.ghibliPass.uniforms.resolution) {
       this.ghibliPass.uniforms.resolution.value.set(width, height);
     }
