@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RaycastVehicle } from './RaycastVehicle';
+import { DakarLiveryGenerator } from './DakarLiveryGenerator';
 
 interface WheelNode {
   group: THREE.Group;
@@ -125,23 +126,32 @@ export class GLTFTruckModel {
           // 3. Main Cab Body & Hood (Iconic Dakar Rally Livery)
           else if (matName.includes('body')) {
             this.bodyMaterials.push(mat);
-            mat.map = null; // Unbind clamped grey template texture for pure, rich automotive paint
-            mat.roughness = 0.28;
-            mat.metalness = 0.18;
-            mat.envMapIntensity = 1.7;
+            // Normalize UV coordinates to [0, 1] for clean canvas livery projection
+            const uvAttr = mesh.geometry.getAttribute('uv');
+            if (uvAttr) {
+              for (let i = 0; i < uvAttr.count; i++) {
+                const u = uvAttr.getX(i);
+                const v = uvAttr.getY(i);
+                uvAttr.setXY(i, (u - 0.14) / (99.80 - 0.14), (v - (-198.80)) / (-99.15 - (-198.80)));
+              }
+              uvAttr.needsUpdate = true;
+            }
           }
           // 4. Rear Cargo Box Panels & Side Sponsons
           else if (matName.includes('fill') && !matName.includes('fillextra')) {
             this.fillMaterials.push(mat);
-            mat.map = null;
-            mat.roughness = 0.32;
-            mat.metalness = 0.15;
-            mat.envMapIntensity = 1.5;
+            const uvAttr = mesh.geometry.getAttribute('uv');
+            if (uvAttr) {
+              for (let i = 0; i < uvAttr.count; i++) {
+                const v = uvAttr.getY(i);
+                if (v < 0) uvAttr.setY(i, Math.abs(v));
+              }
+              uvAttr.needsUpdate = true;
+            }
           }
           // 5. Roof Snorkel, Wing, Air Scoops & Aero Trim
           else if (matName.includes('fillextra')) {
             this.trimMaterials.push(mat);
-            mat.map = null;
             mat.roughness = 0.42;
             mat.metalness = 0.15;
             mat.envMapIntensity = 1.3;
@@ -322,7 +332,7 @@ export class GLTFTruckModel {
     _chassisQuat.set(rot.x, rot.y, rot.z, rot.w);
 
     // Height alignment: align chassis body perfectly with tire radius and suspension
-    _chassisOffset.set(0.0, -0.65, 0.0).applyQuaternion(_chassisQuat);
+    _chassisOffset.set(0.0, -1.32, 0.0).applyQuaternion(_chassisQuat);
     this.chassisMesh.position.set(
       trans.x + _chassisOffset.x,
       trans.y + _chassisOffset.y,
@@ -347,7 +357,8 @@ export class GLTFTruckModel {
       if (!wheelState) continue;
 
       // Suspension travel in MAZ local space (along Z axis)
-      wn.group.position.z = wn.initialPos.z - wheelState.compression * 0.4;
+      const travelDisplacement = (wheelState.compression - 0.22) * 0.7;
+      wn.group.position.z = wn.initialPos.z - travelDisplacement;
 
       // Wheel Spin around local X axis
       _spinQuat.setFromAxisAngle(_spinAxis, wheelState.rotationAngle);
@@ -366,12 +377,24 @@ export class GLTFTruckModel {
   public setLivery(livery: TruckLivery) {
     this.currentLivery = livery;
     const p = LIVERY_PRESETS[livery];
+
+    const bodyTex = DakarLiveryGenerator.getBodyTexture(livery);
+    const fillTex = DakarLiveryGenerator.getFillTexture(livery);
+
     for (const mat of this.bodyMaterials) {
-      mat.color.setHex(p.body);
+      mat.map = bodyTex;
+      mat.color.setHex(0xffffff); // Pure multiplier so rich texture graphics render vibrantly
+      mat.roughness = 0.32;
+      mat.metalness = 0.15;
+      mat.envMapIntensity = 1.6;
       mat.needsUpdate = true;
     }
     for (const mat of this.fillMaterials) {
-      mat.color.setHex(p.fill);
+      mat.map = fillTex;
+      mat.color.setHex(0xffffff);
+      mat.roughness = 0.35;
+      mat.metalness = 0.12;
+      mat.envMapIntensity = 1.4;
       mat.needsUpdate = true;
     }
     for (const mat of this.trimMaterials) {
@@ -382,7 +405,7 @@ export class GLTFTruckModel {
       mat.color.setHex(p.rollCage);
       mat.needsUpdate = true;
     }
-    console.log(`[GLTFTruckModel] Applied livery: ${livery} (Body: #${p.body.toString(16)})`);
+    console.log(`[GLTFTruckModel] Applied Dakar livery: ${livery}`);
   }
 
   public cycleLivery(): TruckLivery {

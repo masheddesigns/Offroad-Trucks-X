@@ -123,13 +123,13 @@ export class FollowCamera {
       // Combine vehicle heading with free mouse orbit
       const combinedYaw = vehicleYaw + this.orbitYaw;
 
-      _lookTarget.set(_cPos.x, _cPos.y + 1.4, _cPos.z);
+      _lookTarget.set(_cPos.x, _cPos.y + 0.8, _cPos.z);
       const horizDist = this.distance * Math.cos(this.orbitPitch);
       const vertDist = this.distance * Math.sin(this.orbitPitch);
 
       this.targetPosition.set(
         _cPos.x - Math.sin(combinedYaw) * horizDist,
-        _cPos.y + 1.4 + vertDist,
+        _cPos.y + 0.8 + vertDist,
         _cPos.z - Math.cos(combinedYaw) * horizDist
       );
 
