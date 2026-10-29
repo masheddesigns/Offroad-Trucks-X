@@ -21,6 +21,7 @@ export interface TrailInfo {
   isRiverCrossing: boolean;
   isCorner: boolean;
   tangent: THREE.Vector3;
+  point: THREE.Vector3;
 }
 
 export class ForestStageMap {
@@ -66,6 +67,7 @@ export class ForestStageMap {
     this.buildBarrierBlocksAndChicanes();
     this.buildDeepForestZoneAndStumps();
     this.buildRockCrawlSection();
+    this.buildRallyJumpRamps();
   }
 
   /**
@@ -138,7 +140,8 @@ export class ForestStageMap {
       isMudSection,
       isRiverCrossing,
       isCorner,
-      tangent: this.trackTangents[closestIdx]
+      tangent: this.trackTangents[closestIdx],
+      point: this.trackPoints[closestIdx]
     };
   }
 
@@ -208,72 +211,123 @@ export class ForestStageMap {
   }
 
   /**
-   * Authoritative height function with physical off-road track carving
+   * Continuous, natural base terrain height (mountains, valley, creek, hills)
+   * Guaranteed C1 smooth with zero step cliffs or discontinuous borders.
+   */
+  public getBaseLandscapeHeight(x: number, z: number): number {
+    const distFromCenter = Math.hypot(x, z);
+
+    // 1. Surrounding Alpine Mountain Amphitheater enclosing the 520m valley
+    let mountainRidge = 0.0;
+    if (distFromCenter > 170.0) {
+      const norm = Math.min(1.0, (distFromCenter - 170.0) / 75.0);
+      const ramp = norm * norm * (3.0 - 2.0 * norm); // Smoothstep 0 -> 1
+      const mountainNoise =
+        Math.sin(x * 0.045 + z * 0.035) * 3.5 +
+        Math.cos(x * 0.07 - z * 0.055) * 2.0;
+      mountainRidge = ramp * (42.0 + mountainNoise);
+    }
+
+    // 2. Rolling Forest Valley Floor (Smooth harmonics, max slope ~10-12 deg)
+    const valleyRolling =
+      Math.sin(x * 0.024) * Math.cos(z * 0.026) * 2.2 +
+      Math.sin(x * 0.055 + 1.2) * Math.cos(z * 0.048 + 0.6) * 1.1;
+
+    // 3. Gentle Western Mountain Ridge & Northern Logging Hills (Smooth Hermite Blends)
+    const westDist = Math.max(0, (-x - 45.0) / 50.0);
+    const westNorm = Math.min(1.0, westDist);
+    const westH = westNorm * westNorm * (3.0 - 2.0 * westNorm) * 11.0;
+
+    const northDist = Math.max(0, (-z - 45.0) / 50.0);
+    const northNorm = Math.min(1.0, northDist);
+    const northH = northNorm * northNorm * (3.0 - 2.0 * northNorm) * 9.0;
+
+    // 4. Mountain Creek Ravine (Smooth Gaussian depression centered at x = -52)
+    const creekDx = (x - (-52.0)) / 18.0;
+    const creekDz = z / 45.0;
+    const creekFalloff = Math.exp(-(creekDx * creekDx)) * Math.exp(-(creekDz * creekDz * creekDz * creekDz));
+    const creekDepth = creekFalloff * 2.6; // Gentle 2.6m natural ravine bed
+
+    let h = valleyRolling + westH + northH - creekDepth + mountainRidge;
+
+    // 5. Smooth Flat Service Pads for Petrol Stations
+    const distS1 = Math.hypot(x - 22, z - 8);
+    if (distS1 < 22) {
+      const blend = Math.min(1.0, distS1 / 22.0);
+      const s1Factor = blend * blend * (3.0 - 2.0 * blend);
+      h = THREE.MathUtils.lerp(0.0, h, s1Factor);
+    }
+
+    const distS2 = Math.hypot(x - (-85), z - (-60));
+    if (distS2 < 20) {
+      const blend = Math.min(1.0, distS2 / 20.0);
+      const s2Factor = blend * blend * (3.0 - 2.0 * blend);
+      h = THREE.MathUtils.lerp(2.0, h, s2Factor);
+    }
+
+    return h;
+  }
+
+  /**
+   * Authoritative terrain height function:
+   * Level rally track bed with smooth shoulders and zero knife-edge ruts
    */
   public getTerrainHeight(x: number, z: number): number {
-    const edgeDist = Math.max(Math.abs(x), Math.abs(z));
-
-    // 1. Surrounding Mountain Ridges enclosing the forest valley
-    if (edgeDist > this.playableRadius) {
-      const wallFactor = (edgeDist - this.playableRadius) / 60.0;
-      return Math.pow(wallFactor, 1.8) * 45.0 + Math.sin(x * 0.08) * Math.cos(z * 0.08) * 4.0;
-    }
-
-    // 2. Base Natural Landscape
-    let baseH = 0.0;
-    if (x < -32 && Math.abs(z) < 32) {
-      // Creek Ravine
-      const creekDist = Math.abs(x - (-52));
-      const creekDepth = Math.max(0, 1.0 - creekDist / 20.0) * 4.2;
-      baseH = Math.sin(z * 0.03) * 3.2 + Math.sin(x * 0.04) * 2.0 - creekDepth;
-    } else if (x < -60) {
-      // West Mountain Ridge
-      baseH = Math.pow((Math.abs(x) - 60) / 45.0, 1.3) * 14.0 + Math.sin(z * 0.04) * 2.8;
-    } else if (z < -50) {
-      // North Logging Hills
-      baseH = Math.pow((Math.abs(z) - 50) / 50.0, 1.3) * 10.0 + Math.sin(x * 0.04) * 2.2;
-    } else {
-      // Valley floor & rolling forest terrain
-      baseH = Math.sin(x * 0.026) * Math.cos(z * 0.026) * 2.2 + Math.sin(x * 0.07) * 0.35 * Math.cos(z * 0.07);
-    }
-
-    // 3. Flat Service Pads for Petrol Stations
-    const distStation1 = Math.hypot(x - 22, z - 8);
-    if (distStation1 < 20) return 0.0;
-    const distStation2 = Math.hypot(x - (-85), z - (-60));
-    if (distStation2 < 18) return 1.8;
-
-    // 4. Physical Carving of the Off-Road Track into the Heightfield!
+    const baseH = this.getBaseLandscapeHeight(x, z);
     const trail = this.getTrailInfo(x, z);
     const d = trail.dist;
-    const halfW = 3.8; // 7.6m track width
 
-    if (d < halfW + 3.0) {
-      const t = Math.min(1.0, d / halfW);
+    const halfW = 4.6;   // 9.2m wide driveable rally road
+    const blendW = 3.6;  // 3.6m smooth transition into surrounding meadow
 
-      // Main trail trench (dug 0.42m into the ground)
-      const trailTrench = -0.42 * Math.cos(t * Math.PI * 0.5);
-
-      // Deep Mud Rut Section: deeper sunken trench
-      let mudDepression = 0.0;
-      if (trail.isMudSection) {
-        mudDepression = -0.35 * Math.cos(t * Math.PI * 0.5);
-      }
-
-      // Wheel ruts: Left and right tire grooves at d = 1.3m
-      const rutDist = Math.abs(d - 1.3);
-      const rutGroove = rutDist < 0.65 ? -0.15 * Math.cos((rutDist / 0.65) * Math.PI * 0.5) : 0.0;
-
-      // Outer Banked Berms on sharp corners
-      let berm = 0.0;
-      if (trail.isCorner && d > halfW - 1.2 && d < halfW + 2.5) {
-        berm = 0.75 * (1.0 - Math.abs(d - (halfW + 0.6)) / 1.8);
-      }
-
-      return baseH + trailTrench + mudDepression + rutGroove + berm;
+    // If far from track, return natural base landscape
+    if (d >= halfW + blendW) {
+      return baseH;
     }
 
-    return baseH;
+    // Height of the natural terrain along the track centerline at the closest waypoint
+    const trackCenterH = this.getBaseLandscapeHeight(trail.point.x, trail.point.z);
+
+    // Subtle 6cm road crowning (higher in the middle, sloping gently to shoulders)
+    const crown = 0.06 * Math.max(0, 1.0 - (d / halfW) * (d / halfW));
+
+    // Banked corner berms: assist turning on sharp hairpins
+    let banking = 0.0;
+    if (trail.isCorner) {
+      const nx = -trail.tangent.z;
+      const nz = trail.tangent.x;
+      const signedLat = (x - trail.point.x) * nx + (z - trail.point.z) * nz;
+      if (signedLat > 0) {
+        banking = Math.min(0.40, (signedLat / halfW) * 0.40);
+      }
+    }
+
+    // Sculpted dirt jump tabletops on straights
+    let jumpRampH = 0.0;
+    // Jump 1: North Logging straight (around x = -45, z = -86)
+    const distJump1 = Math.hypot(trail.point.x - (-45), trail.point.z - (-86));
+    if (distJump1 < 10.0) {
+      const rampT = distJump1 / 10.0;
+      jumpRampH = 1.15 * Math.cos(rampT * Math.PI * 0.5);
+    }
+    // Jump 2: South high-speed meadow straight (around x = 8, z = 52)
+    const distJump2 = Math.hypot(trail.point.x - 8, trail.point.z - 52);
+    if (distJump2 < 9.0) {
+      const rampT = distJump2 / 9.0;
+      jumpRampH = 0.95 * Math.cos(rampT * Math.PI * 0.5);
+    }
+
+    const roadBedH = trackCenterH + crown + banking + jumpRampH;
+
+    // Inside the roadbed: road is flat, level, and solid
+    if (d <= halfW) {
+      return roadBedH;
+    }
+
+    // Road shoulder: smooth cubic Hermite blend from roadBedH to natural baseH
+    const u = (d - halfW) / blendW;
+    const blendFactor = u * u * (3.0 - 2.0 * u); // Smoothstep 0 to 1
+    return THREE.MathUtils.lerp(roadBedH, baseH, blendFactor);
   }
 
   private buildTerrain() {
@@ -313,22 +367,16 @@ export class ForestStageMap {
       } else if (y > 18) {
         const rockMix = Math.min(1.0, (y - 18) / 16.0);
         col.copy(ghibliGranite).lerp(new THREE.Color(0x8e929a), rockMix * 0.3);
-      } else if (trail.isRiverCrossing && trail.dist < 5.5) {
+      } else if (trail.isRiverCrossing && trail.dist < 5.8) {
         col.copy(ghibliMudBog).lerp(new THREE.Color(0x283b3d), 0.4);
-      } else if (trail.isMudSection && trail.dist < 4.8) {
-        // Deep Mud Rut Bog Section
-        const rutEdge = Math.abs(trail.dist - 1.3);
-        col.copy(ghibliMudBog);
-        if (rutEdge < 0.6) col.lerp(new THREE.Color(0x2d1a0f), 0.5); // Deep wet tire groove
-      } else if (trail.dist < 4.5) {
-        // Carved Off-Road Dirt Track with Double Ruts
-        const t = trail.dist / 4.5;
-        const rutEdge = Math.abs(trail.dist - 1.3);
-        if (rutEdge < 0.6) {
-          col.copy(ghibliTrailRut);
-        } else {
-          col.copy(ghibliTrailOchre).lerp(ghibliLushGrass, Math.pow(t, 2.5));
-        }
+      } else if (trail.isMudSection && trail.dist < 5.2) {
+        // Deep Mud Gully Section
+        const t = trail.dist / 5.2;
+        col.copy(ghibliMudBog).lerp(ghibliLushGrass, Math.pow(t, 2.5));
+      } else if (trail.dist < 5.0) {
+        // Broad packed gravel rally track with smooth grass shoulder
+        const t = trail.dist / 5.0;
+        col.copy(ghibliTrailOchre).lerp(ghibliLushGrass, Math.pow(t, 2.5));
       } else {
         // Deep forest loam and lush rolling meadow
         const grassNoise = Math.sin(x * 0.04) * Math.cos(z * 0.04) * 0.5 + 0.5;
@@ -701,8 +749,8 @@ export class ForestStageMap {
       const tangent = this.trackTangents[i];
       const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
-      // Outside of curve
-      const markerPos = p.clone().add(normal.clone().multiplyScalar(4.8));
+      // Outside shoulder of curve (safely off the 4.6m track driving line)
+      const markerPos = p.clone().add(normal.clone().multiplyScalar(5.6));
       const groundY = this.getTerrainHeight(markerPos.x, markerPos.z);
 
       const signGroup = new THREE.Group();
@@ -792,6 +840,9 @@ export class ForestStageMap {
     for (let i = 0; i < count; i++) {
       const x = -52 + (Math.random() - 0.5) * 22;
       const z = (Math.random() - 0.5) * 44;
+      const trail = this.getTrailInfo(x, z);
+      if (trail.dist < 5.8) continue; // Keep the river crossing corridor clear for the truck!
+
       const groundY = this.getTerrainHeight(x, z);
 
       const scaleX = 1.0 + Math.random() * 1.6;
@@ -819,7 +870,8 @@ export class ForestStageMap {
   }
 
   /**
-   * Massive Fallen Tree Logs Across Dirt Trails
+   * Semi-Buried Timber Log Crossings & Corduroy Hurdles
+   * Embedded into the dirt road so 50-inch truck wheels roll over with an authentic rally rumble
    */
   private buildFallenLogObstacles() {
     const logMat = new THREE.MeshStandardMaterial({
@@ -827,46 +879,48 @@ export class ForestStageMap {
       roughness: 0.88
     });
 
-    const logGeo = new THREE.CylinderGeometry(0.48, 0.52, 9.5, 10);
+    const logGeo = new THREE.CylinderGeometry(0.32, 0.35, 9.5, 12);
     logGeo.rotateZ(Math.PI / 2);
 
     const logObstacles = [
-      // 1. Double log hurdle on the North Trail (WP3)
-      { pos: new THREE.Vector3(2, 0, -32), rotY: 0.15, radius: 0.46, len: 8.5 },
-      { pos: new THREE.Vector3(3, 0, -35.5), rotY: -0.1, radius: 0.50, len: 9.0 },
+      // 1. Double corduroy hurdle on North Straight (WP3)
+      { pos: new THREE.Vector3(2, 0, -32), rotY: 0.15, radius: 0.28, len: 8.5 },
+      { pos: new THREE.Vector3(3, 0, -35.5), rotY: -0.1, radius: 0.30, len: 9.0 },
 
-      // 2. Diagonal log obstacle across the Mud Gully Descent
-      { pos: new THREE.Vector3(-15, 0, -74), rotY: 0.55, radius: 0.52, len: 9.5 },
+      // 2. Diagonal log crossing across Mud Gully
+      { pos: new THREE.Vector3(-15, 0, -74), rotY: 0.55, radius: 0.30, len: 9.2 },
 
       // 3. High Logging Pass Fallen Tree (WP5)
-      { pos: new THREE.Vector3(-42, 0, -88), rotY: -0.3, radius: 0.48, len: 9.0 },
+      { pos: new THREE.Vector3(-42, 0, -88), rotY: -0.3, radius: 0.28, len: 9.0 },
 
-      // 4. South Meadow Bog Log Step-up (WP12)
-      { pos: new THREE.Vector3(-22, 0, 48), rotY: 0.35, radius: 0.46, len: 8.5 }
+      // 4. South Meadow Corduroy Step (WP12)
+      { pos: new THREE.Vector3(-22, 0, 48), rotY: 0.35, radius: 0.28, len: 8.5 }
     ];
 
     logObstacles.forEach((obs) => {
       const groundY = this.getTerrainHeight(obs.pos.x, obs.pos.z);
       const logMesh = new THREE.Mesh(logGeo, logMat);
-      logMesh.position.set(obs.pos.x, groundY + obs.radius * 0.85, obs.pos.z);
+      // Half-buried in dirt: only 0.12m crests above roadbed
+      logMesh.position.set(obs.pos.x, groundY + 0.12, obs.pos.z);
       logMesh.rotation.y = obs.rotY;
-      logMesh.scale.set(obs.len / 9.5, obs.radius / 0.5, obs.radius / 0.5);
+      logMesh.scale.set(obs.len / 9.5, obs.radius / 0.32, obs.radius / 0.32);
       logMesh.castShadow = true;
       logMesh.receiveShadow = true;
       this.mesh.add(logMesh);
 
       const bodyDesc = this.rapier.RigidBodyDesc.fixed()
-        .setTranslation(obs.pos.x, groundY + obs.radius * 0.85, obs.pos.z)
+        .setTranslation(obs.pos.x, groundY + 0.10, obs.pos.z)
         .setRotation(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, obs.rotY, 0)));
       const b = this.world.createRigidBody(bodyDesc);
-      const col = this.rapier.ColliderDesc.cuboid(obs.len * 0.48, obs.radius, obs.radius)
-        .setFriction(0.88);
+      // Low rounded cuboid collider allowing smooth roll-over
+      const col = this.rapier.ColliderDesc.roundCuboid(obs.len * 0.46, 0.10, 0.22, 0.08)
+        .setFriction(0.92);
       this.world.createCollider(col, b);
     });
   }
 
   /**
-   * Heavy Concrete & Stone Rally Barrier Blocks
+   * Heavy Concrete & Stone Rally Cliff Guard Barriers (Protects against cliff drop-offs)
    */
   private buildBarrierBlocksAndChicanes() {
     const blockMat = new THREE.MeshStandardMaterial({
@@ -875,21 +929,19 @@ export class ForestStageMap {
       metalness: 0.05
     });
 
-    const blockGeo = new THREE.BoxGeometry(2.2, 0.95, 0.85);
+    const blockGeo = new THREE.BoxGeometry(2.4, 0.95, 0.85);
 
+    // Positioned along the outside edge of cliffs and outpost hairpin (outside the 5.5m road envelope)
     const barrierPositions = [
-      // Chicane on entry straight
-      { pos: new THREE.Vector3(-3.0, 0, 2), rotY: 0.2 },
-      { pos: new THREE.Vector3(3.5, 0, -8), rotY: -0.25 },
-
-      // Mountain Outpost Hairpin Protection Barriers
-      { pos: new THREE.Vector3(-76, 0, -78), rotY: 0.8 },
-      { pos: new THREE.Vector3(-80, 0, -81), rotY: 0.8 },
-      { pos: new THREE.Vector3(-84, 0, -84), rotY: 0.8 },
+      // Mountain Outpost Hairpin Outer Shoulder Barriers
+      { pos: new THREE.Vector3(-92, 0, -78), rotY: 0.8 },
+      { pos: new THREE.Vector3(-95, 0, -74), rotY: 0.7 },
+      { pos: new THREE.Vector3(-98, 0, -68), rotY: 0.5 },
 
       // High Switchback Cliffside Guard Blocks
-      { pos: new THREE.Vector3(-96, 0, -42), rotY: 0.4 },
-      { pos: new THREE.Vector3(-98, 0, -45), rotY: 0.4 }
+      { pos: new THREE.Vector3(-102, 0, -42), rotY: 0.4 },
+      { pos: new THREE.Vector3(-104, 0, -46), rotY: 0.4 },
+      { pos: new THREE.Vector3(-102, 0, -36), rotY: 0.3 }
     ];
 
     barrierPositions.forEach((b) => {
@@ -905,8 +957,8 @@ export class ForestStageMap {
         .setTranslation(b.pos.x, groundY + 0.47, b.pos.z)
         .setRotation(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, b.rotY, 0)));
       const body = this.world.createRigidBody(bodyDesc);
-      const col = this.rapier.ColliderDesc.cuboid(1.1, 0.47, 0.42)
-        .setFriction(0.7)
+      const col = this.rapier.ColliderDesc.cuboid(1.2, 0.47, 0.42)
+        .setFriction(0.6)
         .setRestitution(0.1);
       this.world.createCollider(col, body);
     });
@@ -914,6 +966,7 @@ export class ForestStageMap {
 
   /**
    * Technical Rock Crawl Section (Stepped granite slabs on the switchback)
+   * Scaled for authentic Dakar 4x4 crawling with flexed suspension
    */
   private buildRockCrawlSection() {
     const slabMat = new THREE.MeshStandardMaterial({
@@ -922,18 +975,18 @@ export class ForestStageMap {
       metalness: 0.08
     });
 
-    const slabGeo = new THREE.BoxGeometry(4.2, 0.65, 3.2);
+    const slabGeo = new THREE.BoxGeometry(4.8, 0.28, 3.2);
 
-    for (let s = 0; s < 8; s++) {
-      const t = s / 7.0;
-      const x = -88 + t * 14;
-      const z = -38 + t * 18;
+    for (let s = 0; s < 7; s++) {
+      const t = s / 6.0;
+      const x = -86 + t * 13;
+      const z = -36 + t * 16;
       const groundY = this.getTerrainHeight(x, z);
 
       const slabMesh = new THREE.Mesh(slabGeo, slabMat);
-      const slabY = groundY + 0.25;
+      const slabY = groundY + 0.12;
       slabMesh.position.set(x, slabY, z);
-      slabMesh.rotation.set((Math.random() - 0.5) * 0.15, Math.random() * 0.4, (Math.random() - 0.5) * 0.15);
+      slabMesh.rotation.set((Math.random() - 0.5) * 0.08, Math.random() * 0.3, (Math.random() - 0.5) * 0.08);
       slabMesh.castShadow = true;
       slabMesh.receiveShadow = true;
       this.mesh.add(slabMesh);
@@ -942,10 +995,58 @@ export class ForestStageMap {
         .setTranslation(x, slabY, z)
         .setRotation(slabMesh.quaternion);
       const body = this.world.createRigidBody(bodyDesc);
-      const col = this.rapier.ColliderDesc.cuboid(2.1, 0.32, 1.6)
-        .setFriction(0.92);
+      const col = this.rapier.ColliderDesc.roundCuboid(2.35, 0.13, 1.55, 0.06)
+        .setFriction(0.95);
       this.world.createCollider(col, body);
     }
+  }
+
+  /**
+   * Wooden & Earth Rally Jump Tabletop Ramps
+   * Allows the Dakar truck to launch into thrilling jumps on high-speed straights
+   */
+  private buildRallyJumpRamps() {
+    const rampMat = new THREE.MeshStandardMaterial({
+      color: 0x6e4a2e,
+      roughness: 0.85
+    });
+
+    const rampConfigs = [
+      // 1. High Logging Pass Straight Kicker Jump (WP5)
+      { pos: new THREE.Vector3(-45, 0, -86), rotY: Math.PI / 2, width: 8.4, len: 7.0, height: 1.1 },
+      // 2. South Meadow High-Speed Sweeper Kicker Jump (WP12)
+      { pos: new THREE.Vector3(8, 0, 52), rotY: -Math.PI / 4, width: 8.4, len: 6.5, height: 0.95 }
+    ];
+
+    rampConfigs.forEach((cfg) => {
+      const groundY = this.getTerrainHeight(cfg.pos.x, cfg.pos.z);
+      const rampGeo = new THREE.BoxGeometry(cfg.width, cfg.height, cfg.len);
+      // Slope ramp geometry so approach side is level with roadbed
+      const posAttr = rampGeo.attributes.position;
+      for (let i = 0; i < posAttr.count; i++) {
+        const zVal = posAttr.getZ(i);
+        if (zVal < 0) {
+          const curY = posAttr.getY(i);
+          posAttr.setY(i, curY - (cfg.height * 0.42));
+        }
+      }
+      rampGeo.computeVertexNormals();
+
+      const rampMesh = new THREE.Mesh(rampGeo, rampMat);
+      rampMesh.position.set(cfg.pos.x, groundY + cfg.height * 0.45, cfg.pos.z);
+      rampMesh.rotation.y = cfg.rotY;
+      rampMesh.castShadow = true;
+      rampMesh.receiveShadow = true;
+      this.mesh.add(rampMesh);
+
+      const bodyDesc = this.rapier.RigidBodyDesc.fixed()
+        .setTranslation(cfg.pos.x, groundY + cfg.height * 0.45, cfg.pos.z)
+        .setRotation(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, cfg.rotY, 0)));
+      const body = this.world.createRigidBody(bodyDesc);
+      const col = this.rapier.ColliderDesc.roundCuboid(cfg.width * 0.48, cfg.height * 0.45, cfg.len * 0.48, 0.08)
+        .setFriction(0.92);
+      this.world.createCollider(col, body);
+    });
   }
 
   /**

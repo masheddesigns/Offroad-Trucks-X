@@ -103,18 +103,19 @@ export class RaycastVehicle {
 
     this.chassisBody = world.createRigidBody(bodyDesc);
 
-    // 2. Chassis Collider (Length: 6.8m, Width: 2.6m, Height: 2.4m for MAZ-6440RR Dakar)
-    const colliderDesc = rapier.ColliderDesc.cuboid(1.25, 0.85, 3.2)
+    // 2. Chassis Collider: Beveled / Rounded Dakar Underbody with High Approach Angle & Skid Plate
+    const colliderDesc = rapier.ColliderDesc.roundCuboid(1.18, 0.62, 2.95, 0.16)
+      .setTranslation(0.0, 0.16, -0.05)
       .setDensity(1.0)
-      .setFriction(0.6)
-      .setRestitution(0.01);
+      .setFriction(0.12) // Low-friction Duralumin rally skid plate prevents snagging on terrain
+      .setRestitution(0.02);
 
     this.chassisCollider = world.createCollider(colliderDesc, this.chassisBody);
 
     // Low Center of Mass for Authentic Off-Road Stability (8,200 kg Dakar Rally Raid)
     this.chassisCollider.setMassProperties(
       8200.0, // 8.2 metric tons
-      { x: 0, y: -0.65, z: -0.10 },
+      { x: 0, y: -0.55, z: -0.10 },
       { x: 28000, y: 32000, z: 20000 },
       { x: 0, y: 0, z: 0, w: 1 }
     );
@@ -123,12 +124,12 @@ export class RaycastVehicle {
     // 3. Define 4 Physical Wheels for the 4x4 MAZ-6440RR Dakar Setup
     const trackWidth = 1.06;
     const wheelRadius = 0.65;
-    const restLen = 0.82;
+    const restLen = 0.86;
     const mountY = -0.15;
 
-    // Per-wheel spring rate: ~48,000 N/m. Tuned for 8.2-ton Dakar Rally Raid Truck
-    const kSpring = 48000;
-    const kDamp = 13500;
+    // Per-wheel spring rate: ~58,000 N/m. Tuned for 8.2-ton Dakar Rally Raid Truck
+    const kSpring = 58000;
+    const kDamp = 15000;
 
     const wheelConfigs: WheelConfig[] = [
       // Axle 1: Front Steering & 4WD Drive
@@ -138,7 +139,7 @@ export class RaycastVehicle {
         suspensionRestLength: restLen,
         suspensionStiffness: kSpring,
         suspensionDamping: kDamp,
-        maxTravel: 0.55,
+        maxTravel: 0.60,
         isFront: true,
         isDrive: true
       },
@@ -148,7 +149,7 @@ export class RaycastVehicle {
         suspensionRestLength: restLen,
         suspensionStiffness: kSpring,
         suspensionDamping: kDamp,
-        maxTravel: 0.55,
+        maxTravel: 0.60,
         isFront: true,
         isDrive: true
       },
@@ -157,9 +158,9 @@ export class RaycastVehicle {
         localMountPoint: new THREE.Vector3(-trackWidth, mountY, -2.14),
         radius: wheelRadius,
         suspensionRestLength: restLen,
-        suspensionStiffness: kSpring + 4000,
-        suspensionDamping: kDamp + 1000,
-        maxTravel: 0.55,
+        suspensionStiffness: kSpring + 5000,
+        suspensionDamping: kDamp + 1200,
+        maxTravel: 0.60,
         isFront: false,
         isDrive: true
       },
@@ -167,9 +168,9 @@ export class RaycastVehicle {
         localMountPoint: new THREE.Vector3(trackWidth, mountY, -2.14),
         radius: wheelRadius,
         suspensionRestLength: restLen,
-        suspensionStiffness: kSpring + 4000,
-        suspensionDamping: kDamp + 1000,
-        maxTravel: 0.55,
+        suspensionStiffness: kSpring + 5000,
+        suspensionDamping: kDamp + 1200,
+        maxTravel: 0.60,
         isFront: false,
         isDrive: true
       }
@@ -224,9 +225,9 @@ export class RaycastVehicle {
 
     let totalWheelsGrounded = 0;
 
-    // Low-range crawl gear: 2.2x torque below 25 km/h for climbing steep off-road ruts
-    const crawlRatio = THREE.MathUtils.lerp(2.2, 1.0, Math.min(1.0, this.speedKmh / 28.0));
-    const powerCurve = Math.max(0.25, 1.0 - (this.speedKmh / 150.0));
+    // Low-range crawl gear: 2.5x torque below 25 km/h for climbing steep off-road hills & obstacles
+    const crawlRatio = THREE.MathUtils.lerp(2.5, 1.0, Math.min(1.0, this.speedKmh / 28.0));
+    const powerCurve = Math.max(0.35, 1.0 - (this.speedKmh / 150.0));
     const totalEngineThrust = input.throttle * this.engineHorsepower * crawlRatio * powerCurve * this.powerMultiplier;
 
     // 2. Iterate each wheel (Raycast Physics + Dynamic Grip)
@@ -315,7 +316,7 @@ export class RaycastVehicle {
         const allowDrive = cfg.isDrive && (!input.handbrake || !isRear);
 
         if (allowDrive && Math.abs(input.throttle) > 0.05) {
-          const torqueShare = cfg.isFront ? 0.14 : 0.18;
+          const torqueShare = 0.25; // 25% to each of the 4 wheels = 100% full 4WD torque distribution
           const driveForceMag = totalEngineThrust * torqueShare;
           _driveImpulse.copy(_wheelFwd).multiplyScalar(driveForceMag * dt);
           this.chassisBody.applyImpulseAtPoint(_driveImpulse, _hardpoint, true);
